@@ -1,0 +1,137 @@
+[tasks.clean]
+command = "cargo"
+args = ["clean"]
+
+[tasks.remove-out.windows]
+script_runner = "@duckscript"
+script = '''
+rm -r ./out '''
+
+[tasks.build-release-windows-32.linux]
+command = "cross"
+args = ["build", "--release", "--target", "i686-pc-windows-gnu"]
+
+[tasks.build-release-windows-64.linux]
+command = "cross"
+args = ["build", "--release", "--target", "x86_64-pc-windows-gnu"]
+
+[tasks.build-debug-windows-32.linux]
+command = "cross"
+args = ["build", "--target", "i686-pc-windows-gnu"]
+
+[tasks.build-debug-windows-64.linux]
+command = "cross"
+args = ["build", "--target", "x86_64-pc-windows-gnu"]
+
+[tasks.build-release-windows-32.windows]
+command = "cross"
+args = ["build", "--release", "--target", "i686-pc-windows-msvc"]
+
+[tasks.build-release-windows-64.windows]
+command = "cross"
+args = ["build", "--release", "--target", "x86_64-pc-windows-msvc"]
+
+[tasks.build-debug-windows-32.windows]
+command = "cross"
+args = ["build", "--target", "i686-pc-windows-msvc"]
+
+[tasks.build-debug-windows-64.windows]
+command = "cross"
+args = ["build", "--target", "x86_64-pc-windows-msvc"]
+
+[tasks.build-debug-linux-64]
+command = "cross"
+args = ["build", "--target", "x86_64-unknown-linux-gnu"]
+
+[tasks.build-release-linux-64]
+command = "cross"
+args = ["build", "--release", "--target", "x86_64-unknown-linux-gnu"]
+
+[tasks.build-debug-linux-32]
+command = "cross"
+args = ["build", "--target", "i686-unknown-linux-gnu"]
+
+[tasks.build-release-linux-32]
+command = "cross"
+args = ["build", "--release", "--target", "i686-unknown-linux-gnu"]
+
+[tasks.debug]
+run_task = { name = [
+    "build-debug-windows-32",
+    "build-debug-windows-64",
+    "build-debug-linux-32",
+    "build-debug-linux-64",
+], parallel = true }
+
+[tasks.release]
+run_task = { name = [
+    "build-release-windows-32",
+    "build-release-windows-64",
+    "build-release-linux-32",
+    "build-release-linux-64",
+], parallel = true }
+
+[tasks.copy_bin]
+script_runner = "@duckscript"
+script = '''
+mkdir ./out
+dirs = map
+map_put ${dirs} x86_64-pc-windows-msvc/$$type$$/jsonschema_1c.dll jsonschema_1c_x64.dll
+map_put ${dirs} i686-pc-windows-msvc/$$type$$/jsonschema_1c.dll jsonschema_1c_x32.dll
+map_put ${dirs} x86_64-pc-windows-gnu/$$type$$/jsonschema_1c.dll jsonschema_1c_x64.dll
+map_put ${dirs} i686-pc-windows-gnu/$$type$$/jsonschema_1c.dll jsonschema_1c_x32.dll
+map_put ${dirs} x86_64-unknown-linux-gnu/$$type$$/libjsonschema_1c.so jsonschema_1c_x64.so
+map_put ${dirs} i686-unknown-linux-gnu/$$type$$/libjsonschema_1c.so jsonschema_1c_x32.so
+keys = map_keys ${dirs}
+
+for dir_target in ${keys}
+    path_release = replace ${dir_target} $$type$$ release
+    path_debug = replace ${dir_target} $$type$$ debug
+
+    path_target_release = join_path ./target ${path_release}
+    path_target_debug = join_path ./target ${path_debug}
+
+    exist_path_release = is_path_exists ${path_target_release}
+    exist_path_debug = is_path_exists ${path_target_debug}
+
+    if ${exist_path_release}
+        p = map_get ${dirs} ${dir_target}
+        print yes
+        cp ${path_target_release} ./out/${p}
+    end
+
+    if ${exist_path_debug}
+        p = map_get ${dirs} ${dir_target}
+        cp ${path_target_debug} ./out/${p}
+    end
+end
+
+release ${dirs}
+cp Manifest.xml ./out/Manifest.xml
+'''
+
+[tasks.pack-to-zip.linux]
+script_runner = "bash"
+script = '''
+cd ./out 
+zip "jsonschema_1c" *
+'''
+
+[tasks.pack-to-zip.windows]
+script_runner = "powershell"
+script_extension = "ps1"
+script = '''
+Get-ChildItem -Path "./out" -File | ForEach-Object {
+    Compress-Archive -Path $_.FullName -DestinationPath "./out/jsonschema_1c.zip" -Update
+}
+'''
+
+[tasks.pack]
+dependencies = ["clean", "debug", "remove-out", "copy_bin", "pack-to-zip"]
+
+[tasks.pack-release]
+dependencies = ["clean", "release", "remove-out", "copy_bin", "pack-to-zip"]
+
+[tasks.test]
+args = ["insta", "test"]
+command = "cargo"

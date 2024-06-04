@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bundle xmlns="http://v8.1c.ru/8.2/addin/bundle" name="jsonschema_1c">
+    <component os="Windows" path="jsonschema_1c_x32.dll" type="native" arch="i386" />
+    <component os="Windows" path="jsonschema_1c_x64.dll" type="native" arch="x86_64" />
+    <component os="Linux" path="jsonschema_1c_x32.so" type="native" arch="i386" />
+    <component os="Linux" path="jsonschema_1c_x64.so" type="native" arch="x86_64" />
+</bundle>

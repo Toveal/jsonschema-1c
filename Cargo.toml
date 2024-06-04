@@ -1,0 +1,32 @@
+[package]
+name = "jsonschema_1c"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+native-1c = { git = "https://github.com/tuplecats/rust-native-1c" }
+jsonschema = "0.18"
+serde_json = "1.0"
+regex = "1.10.4"
+
+[dependencies.uuid]
+version = "1.8.0"
+features = ["v4"]
+
+[profile.dev.package]
+insta.opt-level = 3
+similar.opt-level = 3
+
+[dev-dependencies]
+insta = { version = "1.31.0", features = ["redactions"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"
