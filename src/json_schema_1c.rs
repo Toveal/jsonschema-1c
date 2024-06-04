@@ -15,13 +15,21 @@ pub struct JsonSchema1C {
 #[derive(Debug)]
 pub enum JsonSchema1CError {
     SchemaCompile,
+    SchemeNotInstalled,
+    StringConversionError { n_param: u32 },
 }
 
 impl Error for JsonSchema1CError {}
 
 impl std::fmt::Display for JsonSchema1CError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Scheme compilation error")
+        match self {
+            JsonSchema1CError::SchemaCompile => write!(f, "Scheme compilation error"),
+            JsonSchema1CError::SchemeNotInstalled => write!(f, "Scheme not installed"),
+            JsonSchema1CError::StringConversionError { n_param } => {
+                write!(f, "Error converting parameter {n_param} to a string")
+            }
+        }
     }
 }
 
@@ -99,33 +107,38 @@ impl IComponentBase for JsonSchema1C {
     }
 
     fn get_n_methods(&self) -> i32 {
-        0
+        2
     }
 
     fn find_method(&self, method_name: &str) -> i32 {
         match method_name {
+            "IsValid" | "Действителен" => 0,
+            "Validate" | "Проверить" => 1,
             _ => -1,
         }
     }
     fn get_method_name(&self, method_num: i32, method_alias: i32) -> &str {
-        match method_num {
+        match (method_num, method_alias) {
+            (0, 0) => "IsValid",
+            (0, 1) => "Действителен",
+            (1, 0) => "Validate",
+            (1, 1) => "Проверить",
             _ => unreachable!(),
         }
     }
     fn get_n_params(&self, method_num: i32) -> i32 {
         match method_num {
+            0 => 1,
+            1 => 2,
             _ => 0,
         }
     }
     fn get_param_def_value(
         &self,
-        method_num: i32,
-        param_num: i32,
-        var_param_def_value: &mut Variant,
+        _method_num: i32,
+        _param_num: i32,
+        _var_param_def_value: &mut Variant,
     ) -> bool {
-        match method_num {
-            _ => return false,
-        }
         true
     }
     fn has_ret_val(&self, _method_num: i32) -> bool {
@@ -133,7 +146,7 @@ impl IComponentBase for JsonSchema1C {
     }
 
     fn call_as_proc(&mut self, _method_num: i32, _params: Option<&mut [Variant]>) -> bool {
-        true
+        false
     }
 
     fn call_as_func(
@@ -142,8 +155,27 @@ impl IComponentBase for JsonSchema1C {
         ret_vals: &mut Variant,
         params: Option<&mut [Variant]>,
     ) -> bool {
+        if self.schema.is_none() {
+            self.raise_an_exception(&JsonSchema1CError::SchemeNotInstalled.to_string());
+            return false;
+        }
+
+        let params_mut = params.unwrap();
+        let Some(json) = params_mut.first().unwrap().as_string() else {
+            self.raise_an_exception(
+                &JsonSchema1CError::StringConversionError { n_param: 1 }.to_string(),
+            );
+            return false;
+        };
+
         match method_num {
-            _ => return false,
+            0 => *ret_vals = Variant::from(self.is_valid()),
+            1 => {
+                let mut buf = String::new();
+                *ret_vals = Variant::from(self.validate(&json, &mut buf));
+                params_mut[1] = Variant::utf16_string(self, &buf);
+            }
+            _ => unreachable!(),
         }
         true
     }
@@ -164,5 +196,13 @@ impl JsonSchema1C {
     fn raise_an_exception(&self, text: &str) {
         self.connector()
             .add_error(1006, "JsonSchema", text, 1, self.mem_manager());
+    }
+
+    fn is_valid(&self) -> bool {
+        todo!()
+    }
+
+    fn validate(&self, json: &String, result: &mut String) -> bool {
+        todo!()
     }
 }
