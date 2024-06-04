@@ -1,5 +1,6 @@
 #![warn(clippy::pedantic)]
 
+mod formats;
 mod json_schema_1c;
 
 use native_1c::component::AppCapabilities;

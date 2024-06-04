@@ -4,12 +4,15 @@ use native_1c::component::{IComponentBase, IComponentInit};
 use native_1c::native_macro::native_object;
 use native_1c::types::Variant;
 
+use crate::formats::FORMATS;
+
 #[native_object]
 #[repr(C)]
 pub struct JsonSchema1C {
     schema: Option<String>,
     compiled_schema: Option<jsonschema::JSONSchema>,
     output_format: Option<String>,
+    use_custom_formats: bool,
 }
 
 #[derive(Debug)]
@@ -35,6 +38,7 @@ impl std::fmt::Display for JsonSchema1CError {
 
 impl IComponentBase for JsonSchema1C {
     fn init(&mut self) -> bool {
+        self.use_custom_formats = true;
         true
     }
 
@@ -45,13 +49,14 @@ impl IComponentBase for JsonSchema1C {
     fn done(&mut self) {}
 
     fn get_n_props(&self) -> i32 {
-        2
+        3
     }
 
     fn find_prop(&self, prop_name: &str) -> i32 {
         match prop_name {
             "Schema" | "Схема" => 0,
             "Format" | "Формат" => 1,
+            "UseCustomFormats" | "ИспользоватьДопФорматы" => 2,
             _ => -1,
         }
     }
@@ -62,6 +67,8 @@ impl IComponentBase for JsonSchema1C {
             (0, 1) => "Схема",
             (1, 0) => "Format",
             (1, 1) => "Формат",
+            (2, 0) => "UseCustomFormats",
+            (2, 1) => "ИспользоватьДопФорматы",
             _ => unreachable!(),
         }
     }
@@ -76,23 +83,36 @@ impl IComponentBase for JsonSchema1C {
                 *var_prop_val =
                     Variant::utf16_string(self, self.output_format.as_deref().unwrap_or_default());
             }
+            2 => {
+                *var_prop_val = Variant::from(self.use_custom_formats);
+            }
             _ => unreachable!(),
         }
         true
     }
 
     fn set_prop_val(&mut self, prop_num: i32, var_prop_val: &Variant) -> bool {
-        let Some(value) = var_prop_val.as_string() else {
-            return false;
-        };
-
         match prop_num {
             0 => {
+                let Some(value) = var_prop_val.as_string() else {
+                    return false;
+                };
                 if let Err(e) = self.set_schema(value) {
                     self.raise_an_exception(&e.to_string());
                 }
             }
-            1 => self.output_format = Some(value),
+            1 => {
+                let Some(value) = var_prop_val.as_string() else {
+                    return false;
+                };
+                self.output_format = Some(value);
+            }
+            2 => {
+                let Some(value) = var_prop_val.as_bool() else {
+                    return false;
+                };
+                self.use_custom_formats = value;
+            }
             _ => unreachable!(),
         }
 
@@ -195,7 +215,16 @@ impl IComponentBase for JsonSchema1C {
 impl JsonSchema1C {
     fn set_schema(&mut self, text: String) -> Result<(), Box<dyn Error>> {
         let schema_value: serde_json::Value = serde_json::from_str(&text)?;
-        let schema = jsonschema::JSONSchema::compile(&schema_value)
+        let mut schema_options = jsonschema::JSONSchema::options();
+
+        if self.use_custom_formats {
+            for (name, function) in FORMATS {
+                schema_options.with_format(name, function);
+            }
+        }
+
+        let schema = schema_options
+            .compile(&schema_value)
             .map_err(|_| JsonSchema1CError::SchemaCompile)?;
         self.compiled_schema = Some(schema);
         self.schema = Some(text);
