@@ -173,8 +173,16 @@ impl IComponentBase for JsonSchema1C {
             },
             1 => {
                 let mut buf = String::new();
-                *ret_vals = Variant::from(self.validate(&json, &mut buf));
-                params_mut[1] = Variant::utf16_string(self, &buf);
+                match self.validate(&json, &mut buf) {
+                    Ok(v) => {
+                        *ret_vals = Variant::from(v);
+                        params_mut[1] = Variant::utf16_string(self, &buf);
+                    }
+                    Err(e) => {
+                        self.raise_an_exception(&e.to_string());
+                        return false;
+                    }
+                }
             }
             _ => unreachable!(),
         }
@@ -207,7 +215,31 @@ impl JsonSchema1C {
         Ok(schema.is_valid(&check_value))
     }
 
-    fn validate(&self, json: &String, result: &mut String) -> bool {
-        todo!()
+    fn validate(&self, json: &str, buf: &mut String) -> Result<bool, Box<dyn Error>> {
+        let Some(schema) = &self.compiled_schema else {
+            return Err(JsonSchema1CError::SchemeNotInstalled.into());
+        };
+
+        let check_value: serde_json::Value = serde_json::from_str(json)?;
+        let validate_result = schema.validate(&check_value);
+
+        if let Err(err_it) = validate_result {
+            let errors: Vec<String> = if let Some(format) = &self.output_format {
+                err_it
+                    .map(|e| {
+                        format
+                            .replace("{path}", &e.instance_path.to_string())
+                            .replace("{instance}", &e.instance.to_string())
+                            .replace("{schema_path}", &e.schema_path.to_string())
+                    })
+                    .collect()
+            } else {
+                err_it.map(|e| e.to_string()).collect()
+            };
+            *buf = serde_json::to_string(&errors)?;
+            Ok(false)
+        } else {
+            Ok(true)
+        }
     }
 }
