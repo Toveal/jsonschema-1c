@@ -1,7 +1,6 @@
 use std::error::Error;
-use std::sync::Arc;
 
-use native_1c::component::IComponentBase;
+use native_1c::component::{IComponentBase, IComponentInit};
 use native_1c::native_macro::native_object;
 use native_1c::types::Variant;
 
@@ -79,6 +78,16 @@ impl IComponentBase for JsonSchema1C {
             return false;
         };
 
+        match prop_num {
+            0 => {
+                if let Err(e) = self.set_schema(value) {
+                    self.raise_an_exception(&e.to_string());
+                }
+            }
+            1 => self.output_format = Some(value),
+            _ => unreachable!(),
+        }
+
         true
     }
     fn is_prop_readable(&self, _prop_num: i32) -> bool {
@@ -150,5 +159,10 @@ impl JsonSchema1C {
         self.compiled_schema = Some(schema);
         self.schema = Some(text);
         Ok(())
+    }
+
+    fn raise_an_exception(&self, text: &str) {
+        self.connector()
+            .add_error(1006, "JsonSchema", text, 1, self.mem_manager());
     }
 }
