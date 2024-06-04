@@ -155,11 +155,6 @@ impl IComponentBase for JsonSchema1C {
         ret_vals: &mut Variant,
         params: Option<&mut [Variant]>,
     ) -> bool {
-        if self.schema.is_none() {
-            self.raise_an_exception(&JsonSchema1CError::SchemeNotInstalled.to_string());
-            return false;
-        }
-
         let params_mut = params.unwrap();
         let Some(json) = params_mut.first().unwrap().as_string() else {
             self.raise_an_exception(
@@ -169,7 +164,13 @@ impl IComponentBase for JsonSchema1C {
         };
 
         match method_num {
-            0 => *ret_vals = Variant::from(self.is_valid()),
+            0 => match self.is_valid(&json) {
+                Ok(v) => *ret_vals = Variant::from(v),
+                Err(e) => {
+                    self.raise_an_exception(&e.to_string());
+                    return false;
+                }
+            },
             1 => {
                 let mut buf = String::new();
                 *ret_vals = Variant::from(self.validate(&json, &mut buf));
@@ -198,8 +199,12 @@ impl JsonSchema1C {
             .add_error(1006, "JsonSchema", text, 1, self.mem_manager());
     }
 
-    fn is_valid(&self) -> bool {
-        todo!()
+    fn is_valid(&self, json: &str) -> Result<bool, Box<dyn Error>> {
+        let Some(schema) = &self.compiled_schema else {
+            return Err(JsonSchema1CError::SchemeNotInstalled.into());
+        };
+        let check_value: serde_json::Value = serde_json::from_str(json)?;
+        Ok(schema.is_valid(&check_value))
     }
 
     fn validate(&self, json: &String, result: &mut String) -> bool {
