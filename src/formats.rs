@@ -2,7 +2,11 @@ use std::str::FromStr;
 use uuid::Uuid;
 
 type Format = (&'static str, fn(&str) -> bool);
-pub const FORMATS: [Format; 2] = [("uuid", uuid), ("ru-inn-individual", ru_inn_individual)];
+pub const FORMATS: [Format; 3] = [
+    ("uuid", uuid),
+    ("ru-inn-individual", ru_inn_individual),
+    ("ru-inn-legal-entity", ru_inn_legal_entity),
+];
 
 fn uuid(r: &str) -> bool {
     Uuid::from_str(r).is_ok()
@@ -32,5 +36,25 @@ fn ru_inn_individual(r: &str) -> bool {
     let n12 = (checksum2 % 11) % 10;
     r.chars().nth(10).unwrap().to_digit(10) == Some(n11)
         && r.chars().nth(11).unwrap().to_digit(10) == Some(n12)
+}
+
+fn ru_inn_legal_entity(r: &str) -> bool {
+    if r.len() != 10 || r.starts_with("00") {
+        return false;
+    }
+
+    let coefficients = [2, 4, 10, 3, 5, 9, 4, 6, 8];
+
+    let mut checksum = 0;
+
+    for (i, ch) in r.chars().take(9).enumerate() {
+        if let Some(num) = ch.to_digit(10) {
+            checksum += num * coefficients[i];
+        } else {
+            return false;
+        }
+    }
+
+    r.chars().nth(9).unwrap().to_digit(10) == Some(checksum % 11 % 10)
 }
 
