@@ -2,6 +2,7 @@
 
 mod formats;
 mod json_schema_1c;
+mod resolver;
 
 use native_1c::component::AppCapabilities;
 use native_1c::widestring::{U16CStr, U16CString};

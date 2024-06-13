@@ -1,10 +1,14 @@
 use std::error::Error;
+use std::str::FromStr;
 
 use native_1c::component::{IComponentBase, IComponentInit};
 use native_1c::native_macro::native_object;
 use native_1c::types::Variant;
+use serde_json::Value;
+use url::Url;
 
 use crate::formats::FORMATS;
+use crate::resolver::Resolver;
 
 #[native_object]
 #[repr(C)]
@@ -13,6 +17,7 @@ pub struct JsonSchema1C {
     compiled_schema: Option<jsonschema::JSONSchema>,
     output_format: Option<String>,
     use_custom_formats: bool,
+    resolver: Resolver,
 }
 
 #[derive(Debug)]
@@ -20,6 +25,9 @@ pub enum JsonSchema1CError {
     SchemaCompile,
     SchemeNotInstalled,
     StringConversionError { n_param: u32 },
+    PropertyIdNotFound,
+    UrlConversionError,
+    PropertyIdNotString,
 }
 
 impl Error for JsonSchema1CError {}
@@ -32,6 +40,11 @@ impl std::fmt::Display for JsonSchema1CError {
             JsonSchema1CError::StringConversionError { n_param } => {
                 write!(f, "Error converting parameter {n_param} to a string")
             }
+            JsonSchema1CError::PropertyIdNotFound => {
+                write!(f, "Property '$id' not found in the schema")
+            }
+            JsonSchema1CError::UrlConversionError => write!(f, "Failed to convert id to url"),
+            JsonSchema1CError::PropertyIdNotString => write!(f, "Property '$id' is not a string"),
         }
     }
 }
@@ -118,6 +131,7 @@ impl IComponentBase for JsonSchema1C {
 
         true
     }
+
     fn is_prop_readable(&self, _prop_num: i32) -> bool {
         true
     }
@@ -127,32 +141,44 @@ impl IComponentBase for JsonSchema1C {
     }
 
     fn get_n_methods(&self) -> i32 {
-        2
+        5
     }
 
     fn find_method(&self, method_name: &str) -> i32 {
         match method_name {
             "IsValid" | "Действителен" => 0,
             "Validate" | "Проверить" => 1,
+            "AddScheme" | "ДобавитьСхему" => 2,
+            "DeleteScheme" | "УдалитьСхему" => 3,
+            "DeleteAllSchemes" | "УдалитьВсеСхемы" => 4,
             _ => -1,
         }
     }
+
     fn get_method_name(&self, method_num: i32, method_alias: i32) -> &str {
         match (method_num, method_alias) {
             (0, 0) => "IsValid",
             (0, 1) => "Действителен",
             (1, 0) => "Validate",
             (1, 1) => "Проверить",
+            (2, 0) => "AddScheme",
+            (2, 1) => "ДобавитьСхему",
+            (3, 0) => "DeleteScheme",
+            (3, 1) => "УдалитьСхему",
+            (4, 0) => "DeleteAllSchemes",
+            (4, 1) => "УдалитьВсеСхемы",
             _ => unreachable!(),
         }
     }
+
     fn get_n_params(&self, method_num: i32) -> i32 {
         match method_num {
-            0 => 1,
+            0 | 2 | 3 => 1,
             1 => 2,
             _ => 0,
         }
     }
+
     fn get_param_def_value(
         &self,
         _method_num: i32,
@@ -161,12 +187,44 @@ impl IComponentBase for JsonSchema1C {
     ) -> bool {
         true
     }
-    fn has_ret_val(&self, _method_num: i32) -> bool {
-        true
+
+    fn has_ret_val(&self, method_num: i32) -> bool {
+        matches!(method_num, 0 | 1)
     }
 
-    fn call_as_proc(&mut self, _method_num: i32, _params: Option<&mut [Variant]>) -> bool {
-        false
+    fn call_as_proc(&mut self, method_num: i32, params: Option<&mut [Variant]>) -> bool {
+        match method_num {
+            2 => {
+                let params = params.unwrap();
+                let Some(value) = params.first().unwrap().as_string() else {
+                    self.raise_an_exception(
+                        &JsonSchema1CError::StringConversionError { n_param: 1 }.to_string(),
+                    );
+                    return false;
+                };
+                if let Err(e) = self.add_additional_scheme(&value) {
+                    self.raise_an_exception(&e.to_string());
+                    return false;
+                }
+            }
+            3 => {
+                let params = params.unwrap();
+                let Some(key) = params.first().unwrap().as_string() else {
+                    self.raise_an_exception(
+                        &JsonSchema1CError::StringConversionError { n_param: 1 }.to_string(),
+                    );
+                    return false;
+                };
+
+                if let Err(e) = self.remove_additional_scheme(&key) {
+                    self.raise_an_exception(&e.to_string());
+                    return false;
+                }
+            }
+            4 => self.clear_additional_schemes(),
+            _ => unreachable!(),
+        }
+        true
     }
 
     fn call_as_func(
@@ -224,6 +282,7 @@ impl JsonSchema1C {
         }
 
         let schema = schema_options
+            .with_resolver(self.resolver.clone())
             .compile(&schema_value)
             .map_err(|_| JsonSchema1CError::SchemaCompile)?;
         self.compiled_schema = Some(schema);
@@ -271,5 +330,29 @@ impl JsonSchema1C {
         } else {
             Ok(true)
         }
+    }
+
+    fn add_additional_scheme(&mut self, json: &str) -> Result<(), Box<dyn Error>> {
+        let schema_value: Value = serde_json::from_str(json)?;
+        let schema_id = schema_value
+            .get("$id")
+            .ok_or(JsonSchema1CError::PropertyIdNotFound)?;
+        let schema_url = schema_id
+            .as_str()
+            .ok_or(JsonSchema1CError::PropertyIdNotString)?;
+        let url = Url::from_str(schema_url).map_err(|_| JsonSchema1CError::UrlConversionError)?;
+
+        self.resolver.add_schema(url, schema_value);
+        Ok(())
+    }
+
+    fn remove_additional_scheme(&mut self, url: &str) -> Result<(), JsonSchema1CError> {
+        let url = Url::from_str(url).map_err(|_| JsonSchema1CError::UrlConversionError)?;
+        self.resolver.remove_schema(&url);
+        Ok(())
+    }
+
+    fn clear_additional_schemes(&mut self) {
+        self.resolver.clear();
     }
 }
