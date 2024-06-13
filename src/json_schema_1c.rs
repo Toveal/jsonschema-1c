@@ -1,12 +1,13 @@
 use std::error::Error;
 use std::str::FromStr;
 
-use native_1c::component::{IComponentBase, IComponentInit};
+use native_1c::component::IComponentBase;
 use native_1c::native_macro::native_object;
 use native_1c::types::Variant;
 use serde_json::Value;
 use url::Url;
 
+use crate::errors::JsonSchema1CError;
 use crate::formats::FORMATS;
 use crate::resolver::Resolver;
 
@@ -19,35 +20,6 @@ pub struct JsonSchema1C {
     use_custom_formats: bool,
     resolver: Resolver,
     last_error: Option<Box<dyn Error>>,
-}
-
-#[derive(Debug)]
-pub enum JsonSchema1CError {
-    SchemaCompile,
-    SchemeNotInstalled,
-    StringConversionError { n_param: u32 },
-    PropertyIdNotFound,
-    UrlConversionError,
-    PropertyIdNotString,
-}
-
-impl Error for JsonSchema1CError {}
-
-impl std::fmt::Display for JsonSchema1CError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            JsonSchema1CError::SchemaCompile => write!(f, "Scheme compilation error"),
-            JsonSchema1CError::SchemeNotInstalled => write!(f, "Scheme not installed"),
-            JsonSchema1CError::StringConversionError { n_param } => {
-                write!(f, "Error converting parameter {n_param} to a string")
-            }
-            JsonSchema1CError::PropertyIdNotFound => {
-                write!(f, "Property '$id' not found in the schema")
-            }
-            JsonSchema1CError::UrlConversionError => write!(f, "Failed to convert id to url"),
-            JsonSchema1CError::PropertyIdNotString => write!(f, "Property '$id' is not a string"),
-        }
-    }
 }
 
 impl IComponentBase for JsonSchema1C {
@@ -113,23 +85,26 @@ impl IComponentBase for JsonSchema1C {
         match prop_num {
             0 => {
                 let Some(value) = var_prop_val.as_string() else {
-                    self.raise_an_exception(
-                        JsonSchema1CError::StringConversionError { n_param: 1 }.into(),
-                    );
+                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
                     return false;
                 };
                 if let Err(e) = self.set_schema(value) {
-                    self.raise_an_exception(e);
+                    self.add_error(e);
+                    return false;
                 }
             }
             1 => {
                 let Some(value) = var_prop_val.as_string() else {
+                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
                     return false;
                 };
                 self.output_format = Some(value);
             }
             2 => {
                 let Some(value) = var_prop_val.as_bool() else {
+                    self.add_error(
+                        JsonSchema1CError::BooleanConverstionError { n_param: 1 }.into(),
+                    );
                     return false;
                 };
                 self.use_custom_formats = value;
@@ -208,27 +183,23 @@ impl IComponentBase for JsonSchema1C {
             2 => {
                 let params = params.unwrap();
                 let Some(value) = params.first().unwrap().as_string() else {
-                    self.raise_an_exception(
-                        JsonSchema1CError::StringConversionError { n_param: 1 }.into(),
-                    );
+                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
                     return false;
                 };
                 if let Err(e) = self.add_additional_scheme(&value) {
-                    self.raise_an_exception(e);
+                    self.add_error(e);
                     return false;
                 }
             }
             3 => {
                 let params = params.unwrap();
                 let Some(key) = params.first().unwrap().as_string() else {
-                    self.raise_an_exception(
-                        JsonSchema1CError::StringConversionError { n_param: 1 }.into(),
-                    );
+                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
                     return false;
                 };
 
                 if let Err(e) = self.remove_additional_scheme(&key) {
-                    self.raise_an_exception(e.into());
+                    self.add_error(e.into());
                     return false;
                 }
             }
@@ -248,16 +219,14 @@ impl IComponentBase for JsonSchema1C {
             0 => {
                 let params_mut = params.unwrap();
                 let Some(json) = params_mut.first().unwrap().as_string() else {
-                    self.raise_an_exception(
-                        JsonSchema1CError::StringConversionError { n_param: 1 }.into(),
-                    );
+                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
                     return false;
                 };
 
                 match self.is_valid(&json) {
                     Ok(v) => *ret_vals = Variant::from(v),
                     Err(e) => {
-                        self.raise_an_exception(e);
+                        self.add_error(e);
                         return false;
                     }
                 }
@@ -265,9 +234,7 @@ impl IComponentBase for JsonSchema1C {
             1 => {
                 let params_mut = params.unwrap();
                 let Some(json) = params_mut.first().unwrap().as_string() else {
-                    self.raise_an_exception(
-                        JsonSchema1CError::StringConversionError { n_param: 1 }.into(),
-                    );
+                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
                     return false;
                 };
 
@@ -278,7 +245,7 @@ impl IComponentBase for JsonSchema1C {
                         params_mut[1] = Variant::utf16_string(self, &buf);
                     }
                     Err(e) => {
-                        self.raise_an_exception(e);
+                        self.add_error(e);
                         return false;
                     }
                 }
@@ -316,14 +283,7 @@ impl JsonSchema1C {
         Ok(())
     }
 
-    fn raise_an_exception(&mut self, error: Box<dyn Error>) {
-        self.connector().add_error(
-            1006,
-            "JsonSchema",
-            &error.to_string(),
-            1,
-            self.mem_manager(),
-        );
+    fn add_error(&mut self, error: Box<dyn Error>) {
         self.last_error = Some(error);
     }
 

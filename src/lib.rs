@@ -1,5 +1,6 @@
 #![warn(clippy::pedantic)]
 
+mod errors;
 mod formats;
 mod json_schema_1c;
 mod resolver;
