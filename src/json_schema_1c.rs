@@ -18,6 +18,7 @@ pub struct JsonSchema1C {
     output_format: Option<String>,
     use_custom_formats: bool,
     resolver: Resolver,
+    last_error: Option<Box<dyn Error>>,
 }
 
 #[derive(Debug)]
@@ -112,10 +113,13 @@ impl IComponentBase for JsonSchema1C {
         match prop_num {
             0 => {
                 let Some(value) = var_prop_val.as_string() else {
+                    self.raise_an_exception(
+                        JsonSchema1CError::StringConversionError { n_param: 1 }.into(),
+                    );
                     return false;
                 };
                 if let Err(e) = self.set_schema(value) {
-                    self.raise_an_exception(&e.to_string());
+                    self.raise_an_exception(e);
                 }
             }
             1 => {
@@ -145,7 +149,7 @@ impl IComponentBase for JsonSchema1C {
     }
 
     fn get_n_methods(&self) -> i32 {
-        5
+        6
     }
 
     fn find_method(&self, method_name: &str) -> i32 {
@@ -155,6 +159,7 @@ impl IComponentBase for JsonSchema1C {
             "AddScheme" | "ДобавитьСхему" => 2,
             "DeleteScheme" | "УдалитьСхему" => 3,
             "DeleteAllSchemes" | "УдалитьВсеСхемы" => 4,
+            "GetLastError" | "ПолучитьПоследнююОшибку" => 5,
             _ => -1,
         }
     }
@@ -171,6 +176,8 @@ impl IComponentBase for JsonSchema1C {
             (3, 1) => "УдалитьСхему",
             (4, 0) => "DeleteAllSchemes",
             (4, 1) => "УдалитьВсеСхемы",
+            (5, 0) => "GetLastError",
+            (5, 1) => "ПолучитьПоследнююОшибку",
             _ => unreachable!(),
         }
     }
@@ -193,7 +200,7 @@ impl IComponentBase for JsonSchema1C {
     }
 
     fn has_ret_val(&self, method_num: i32) -> bool {
-        matches!(method_num, 0 | 1)
+        matches!(method_num, 0 | 1 | 5)
     }
 
     fn call_as_proc(&mut self, method_num: i32, params: Option<&mut [Variant]>) -> bool {
@@ -202,12 +209,12 @@ impl IComponentBase for JsonSchema1C {
                 let params = params.unwrap();
                 let Some(value) = params.first().unwrap().as_string() else {
                     self.raise_an_exception(
-                        &JsonSchema1CError::StringConversionError { n_param: 1 }.to_string(),
+                        JsonSchema1CError::StringConversionError { n_param: 1 }.into(),
                     );
                     return false;
                 };
                 if let Err(e) = self.add_additional_scheme(&value) {
-                    self.raise_an_exception(&e.to_string());
+                    self.raise_an_exception(e);
                     return false;
                 }
             }
@@ -215,13 +222,13 @@ impl IComponentBase for JsonSchema1C {
                 let params = params.unwrap();
                 let Some(key) = params.first().unwrap().as_string() else {
                     self.raise_an_exception(
-                        &JsonSchema1CError::StringConversionError { n_param: 1 }.to_string(),
+                        JsonSchema1CError::StringConversionError { n_param: 1 }.into(),
                     );
                     return false;
                 };
 
                 if let Err(e) = self.remove_additional_scheme(&key) {
-                    self.raise_an_exception(&e.to_string());
+                    self.raise_an_exception(e.into());
                     return false;
                 }
             }
@@ -237,23 +244,33 @@ impl IComponentBase for JsonSchema1C {
         ret_vals: &mut Variant,
         params: Option<&mut [Variant]>,
     ) -> bool {
-        let params_mut = params.unwrap();
-        let Some(json) = params_mut.first().unwrap().as_string() else {
-            self.raise_an_exception(
-                &JsonSchema1CError::StringConversionError { n_param: 1 }.to_string(),
-            );
-            return false;
-        };
-
         match method_num {
-            0 => match self.is_valid(&json) {
-                Ok(v) => *ret_vals = Variant::from(v),
-                Err(e) => {
-                    self.raise_an_exception(&e.to_string());
+            0 => {
+                let params_mut = params.unwrap();
+                let Some(json) = params_mut.first().unwrap().as_string() else {
+                    self.raise_an_exception(
+                        JsonSchema1CError::StringConversionError { n_param: 1 }.into(),
+                    );
                     return false;
+                };
+
+                match self.is_valid(&json) {
+                    Ok(v) => *ret_vals = Variant::from(v),
+                    Err(e) => {
+                        self.raise_an_exception(e);
+                        return false;
+                    }
                 }
-            },
+            }
             1 => {
+                let params_mut = params.unwrap();
+                let Some(json) = params_mut.first().unwrap().as_string() else {
+                    self.raise_an_exception(
+                        JsonSchema1CError::StringConversionError { n_param: 1 }.into(),
+                    );
+                    return false;
+                };
+
                 let mut buf = String::new();
                 match self.validate(&json, &mut buf) {
                     Ok(v) => {
@@ -261,9 +278,14 @@ impl IComponentBase for JsonSchema1C {
                         params_mut[1] = Variant::utf16_string(self, &buf);
                     }
                     Err(e) => {
-                        self.raise_an_exception(&e.to_string());
+                        self.raise_an_exception(e);
                         return false;
                     }
+                }
+            }
+            5 => {
+                if let Some(e) = self.last_error.as_ref() {
+                    *ret_vals = Variant::utf16_string(self, &e.to_string());
                 }
             }
             _ => unreachable!(),
@@ -294,9 +316,15 @@ impl JsonSchema1C {
         Ok(())
     }
 
-    fn raise_an_exception(&self, text: &str) {
-        self.connector()
-            .add_error(1006, "JsonSchema", text, 1, self.mem_manager());
+    fn raise_an_exception(&mut self, error: Box<dyn Error>) {
+        self.connector().add_error(
+            1006,
+            "JsonSchema",
+            &error.to_string(),
+            1,
+            self.mem_manager(),
+        );
+        self.last_error = Some(error);
     }
 
     fn is_valid(&self, json: &str) -> Result<bool, Box<dyn Error>> {
