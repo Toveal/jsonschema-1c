@@ -62,7 +62,7 @@ impl IComponentBase for JsonSchema1C {
     fn done(&mut self) {}
 
     fn get_n_props(&self) -> i32 {
-        3
+        4
     }
 
     fn find_prop(&self, prop_name: &str) -> i32 {
@@ -70,6 +70,7 @@ impl IComponentBase for JsonSchema1C {
             "Schema" | "Схема" => 0,
             "Format" | "Формат" => 1,
             "UseCustomFormats" | "ИспользоватьДопФорматы" => 2,
+            "Version" | "Версия" => 3,
             _ => -1,
         }
     }
@@ -82,6 +83,8 @@ impl IComponentBase for JsonSchema1C {
             (1, 1) => "Формат",
             (2, 0) => "UseCustomFormats",
             (2, 1) => "ИспользоватьДопФорматы",
+            (3, 0) => "Version",
+            (3, 1) => "Версия",
             _ => unreachable!(),
         }
     }
@@ -99,6 +102,7 @@ impl IComponentBase for JsonSchema1C {
             2 => {
                 *var_prop_val = Variant::from(self.use_custom_formats);
             }
+            3 => *var_prop_val = Variant::utf16_string(self, std::env!("CARGO_PKG_VERSION")),
             _ => unreachable!(),
         }
         true
@@ -136,8 +140,8 @@ impl IComponentBase for JsonSchema1C {
         true
     }
 
-    fn is_prop_writeable(&self, _prop_num: i32) -> bool {
-        true
+    fn is_prop_writeable(&self, prop_num: i32) -> bool {
+        prop_num != 3
     }
 
     fn get_n_methods(&self) -> i32 {
