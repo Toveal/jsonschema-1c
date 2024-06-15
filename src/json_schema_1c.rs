@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::error::Error;
 use std::str::FromStr;
+use std::sync::{Arc, RwLock};
 
 use native_1c::component::IComponentBase;
 use native_1c::native_macro::native_object;
@@ -20,6 +22,7 @@ pub struct JsonSchema1C {
     use_custom_formats: bool,
     resolver: Resolver,
     last_error: Option<Box<dyn Error>>,
+    schema_store: Arc<RwLock<HashMap<Url, Arc<Value>>>>,
 }
 
 impl IComponentBase for JsonSchema1C {
@@ -275,7 +278,7 @@ impl JsonSchema1C {
         }
 
         let schema = schema_options
-            .with_resolver(self.resolver.clone())
+            .with_resolver(Resolver::new(self.schema_store.clone()))
             .compile(&schema_value)
             .map_err(|_| JsonSchema1CError::SchemaCompile)?;
         self.compiled_schema = Some(schema);
@@ -334,17 +337,20 @@ impl JsonSchema1C {
             .ok_or(JsonSchema1CError::PropertyIdNotString)?;
         let url = Url::from_str(schema_url).map_err(|_| JsonSchema1CError::UrlConversionError)?;
 
-        self.resolver.add_schema(url, schema_value);
+        self.schema_store
+            .write()
+            .unwrap()
+            .insert(url, Arc::new(schema_value));
         Ok(())
     }
 
     fn remove_additional_scheme(&mut self, url: &str) -> Result<(), JsonSchema1CError> {
         let url = Url::from_str(url).map_err(|_| JsonSchema1CError::UrlConversionError)?;
-        self.resolver.remove_schema(&url);
+        self.schema_store.write().unwrap().remove(&url);
         Ok(())
     }
 
     fn clear_additional_schemes(&mut self) {
-        self.resolver.clear();
+        self.schema_store.write().unwrap().clear();
     }
 }
