@@ -87,20 +87,18 @@ impl IComponentBase for JsonSchema1C {
     fn set_prop_val(&mut self, prop_num: i32, var_prop_val: &Variant) -> bool {
         match prop_num {
             1 => {
-                let Some(value) = var_prop_val.as_string() else {
-                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
+                if let Some(value) = var_prop_val.as_string() {
+                    self.output_format = Some(value);
+                } else {
                     return false;
                 };
-                self.output_format = Some(value);
             }
             2 => {
-                let Some(value) = var_prop_val.as_bool() else {
-                    self.add_error(
-                        JsonSchema1CError::BooleanConverstionError { n_param: 1 }.into(),
-                    );
+                if let Some(value) = var_prop_val.as_bool() {
+                    self.use_custom_formats = value;
+                } else {
                     return false;
                 };
-                self.use_custom_formats = value;
             }
             _ => unreachable!(),
         }
