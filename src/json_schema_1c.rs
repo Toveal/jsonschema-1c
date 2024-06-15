@@ -271,7 +271,8 @@ impl IComponentBase for JsonSchema1C {
 
 impl JsonSchema1C {
     fn set_schema(&mut self, text: String) -> Result<(), Box<dyn Error>> {
-        let schema_value: serde_json::Value = serde_json::from_str(&text)?;
+        let schema_value: serde_json::Value =
+            serde_json::from_str(&text).map_err(JsonSchema1CError::from)?;
         let mut schema_options = jsonschema::JSONSchema::options();
 
         if self.use_custom_formats {
@@ -283,7 +284,7 @@ impl JsonSchema1C {
         let schema = schema_options
             .with_resolver(Resolver::new(self.schema_store.clone()))
             .compile(&schema_value)
-            .map_err(|_| JsonSchema1CError::SchemaCompile)?;
+            .map_err(JsonSchema1CError::from)?;
         self.compiled_schema = Some(schema);
         self.schema = Some(text);
         Ok(())
@@ -294,11 +295,13 @@ impl JsonSchema1C {
     }
 
     fn is_valid(&self, json: &str) -> Result<bool, Box<dyn Error>> {
-        let Some(schema) = &self.compiled_schema else {
-            return Err(JsonSchema1CError::SchemeNotInstalled.into());
-        };
-        let check_value: serde_json::Value = serde_json::from_str(json)?;
-        Ok(schema.is_valid(&check_value))
+        if let Some(schema) = &self.compiled_schema {
+            let check_value: serde_json::Value =
+                serde_json::from_str(json).map_err(JsonSchema1CError::from)?;
+            Ok(schema.is_valid(&check_value))
+        } else {
+            Err(JsonSchema1CError::SchemeNotInstalled.into())
+        }
     }
 
     fn validate(&self, json: &str, buf: &mut String) -> Result<bool, Box<dyn Error>> {
@@ -306,7 +309,8 @@ impl JsonSchema1C {
             return Err(JsonSchema1CError::SchemeNotInstalled.into());
         };
 
-        let check_value: serde_json::Value = serde_json::from_str(json)?;
+        let check_value: serde_json::Value =
+            serde_json::from_str(json).map_err(JsonSchema1CError::from)?;
         let validate_result = schema.validate(&check_value);
 
         if let Err(err_it) = validate_result {
@@ -331,14 +335,14 @@ impl JsonSchema1C {
     }
 
     fn add_additional_scheme(&mut self, json: &str) -> Result<(), Box<dyn Error>> {
-        let schema_value: Value = serde_json::from_str(json)?;
+        let schema_value: Value = serde_json::from_str(json).map_err(JsonSchema1CError::from)?;
         let schema_id = schema_value
             .get("$id")
             .ok_or(JsonSchema1CError::PropertyIdNotFound)?;
         let schema_url = schema_id
             .as_str()
             .ok_or(JsonSchema1CError::PropertyIdNotString)?;
-        let url = Url::from_str(schema_url).map_err(|_| JsonSchema1CError::UrlConversionError)?;
+        let url = Url::from_str(schema_url).map_err(JsonSchema1CError::from)?;
 
         self.schema_store
             .write()
@@ -348,7 +352,7 @@ impl JsonSchema1C {
     }
 
     fn remove_additional_scheme(&mut self, url: &str) -> Result<(), JsonSchema1CError> {
-        let url = Url::from_str(url).map_err(|_| JsonSchema1CError::UrlConversionError)?;
+        let url = Url::from_str(url).map_err(JsonSchema1CError::from)?;
         self.schema_store.write().unwrap().remove(&url);
         Ok(())
     }
