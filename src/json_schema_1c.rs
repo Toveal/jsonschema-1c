@@ -115,7 +115,7 @@ impl IComponentBase for JsonSchema1C {
     }
 
     fn get_n_methods(&self) -> i32 {
-        6
+        7
     }
 
     fn find_method(&self, method_name: &str) -> i32 {
@@ -126,6 +126,7 @@ impl IComponentBase for JsonSchema1C {
             "DeleteScheme" | "УдалитьСхему" => 3,
             "DeleteAllSchemes" | "УдалитьВсеСхемы" => 4,
             "GetLastError" | "ПолучитьПоследнююОшибку" => 5,
+            "SetMainScheme" | "УстановитьОсновнуюСхему" => 6,
             _ => -1,
         }
     }
@@ -144,13 +145,15 @@ impl IComponentBase for JsonSchema1C {
             (4, 1) => "УдалитьВсеСхемы",
             (5, 0) => "GetLastError",
             (5, 1) => "ПолучитьПоследнююОшибку",
+            (6, 0) => "SetMainScheme",
+            (6, 1) => "УстановитьОсновнуюСхему",
             _ => unreachable!(),
         }
     }
 
     fn get_n_params(&self, method_num: i32) -> i32 {
         match method_num {
-            0 | 2 | 3 => 1,
+            0 | 2 | 3 | 6 => 1,
             1 => 2,
             _ => 0,
         }
@@ -195,6 +198,18 @@ impl IComponentBase for JsonSchema1C {
                 }
             }
             4 => self.clear_additional_schemes(),
+            6 => {
+                let params = params.unwrap();
+                let Some(value) = params.first().unwrap().as_string() else {
+                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
+                    return false;
+                };
+
+                if let Err(e) = self.set_schema(value) {
+                    self.add_error(e);
+                    return false;
+                }
+            }
             _ => unreachable!(),
         }
         true
