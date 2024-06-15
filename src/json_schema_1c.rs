@@ -86,16 +86,6 @@ impl IComponentBase for JsonSchema1C {
 
     fn set_prop_val(&mut self, prop_num: i32, var_prop_val: &Variant) -> bool {
         match prop_num {
-            0 => {
-                let Some(value) = var_prop_val.as_string() else {
-                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
-                    return false;
-                };
-                if let Err(e) = self.set_schema(value) {
-                    self.add_error(e);
-                    return false;
-                }
-            }
             1 => {
                 let Some(value) = var_prop_val.as_string() else {
                     self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
@@ -123,7 +113,7 @@ impl IComponentBase for JsonSchema1C {
     }
 
     fn is_prop_writeable(&self, prop_num: i32) -> bool {
-        prop_num != 3
+        !matches!(prop_num, 0 | 3)
     }
 
     fn get_n_methods(&self) -> i32 {
