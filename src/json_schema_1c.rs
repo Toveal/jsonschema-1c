@@ -94,7 +94,11 @@ impl IComponentBase for JsonSchema1C {
         match prop_num {
             1 => {
                 if let Some(value) = var_prop_val.as_string() {
+                    if value.is_empty() {
+                        self.output_format = None;
+                    } else {
                     self.output_format = Some(value);
+                    }
                 } else {
                     return false;
                 };
