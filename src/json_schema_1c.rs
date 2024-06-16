@@ -276,6 +276,8 @@ impl IComponentBase for JsonSchema1C {
             5 => {
                 if let Some(e) = self.last_error.as_ref() {
                     *ret_vals = Variant::utf16_string(self, &e.to_string());
+                } else {
+                    *ret_vals = Variant::empty();
                 }
             }
             _ => return false,
