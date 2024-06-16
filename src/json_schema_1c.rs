@@ -23,11 +23,13 @@ pub struct JsonSchema1C {
     resolver: Resolver,
     last_error: Option<Box<dyn Error>>,
     schema_store: Arc<RwLock<HashMap<Url, Arc<Value>>>>,
+    ignore_unknown_formats: bool,
 }
 
 impl IComponentBase for JsonSchema1C {
     fn init(&mut self) -> bool {
         self.use_custom_formats = true;
+        self.ignore_unknown_formats = true;
         true
     }
 
@@ -38,7 +40,7 @@ impl IComponentBase for JsonSchema1C {
     fn done(&mut self) {}
 
     fn get_n_props(&self) -> i32 {
-        4
+        5
     }
 
     fn find_prop(&self, prop_name: &str) -> i32 {
@@ -47,6 +49,9 @@ impl IComponentBase for JsonSchema1C {
             "Format" | "Формат" => 1,
             "UseCustomFormats" | "ИспользоватьДопФорматы" => 2,
             "Version" | "Версия" => 3,
+            "IgnoreUnknownFormats" | "ИгнорироватьНеизвестныеФорматы" => {
+                4
+            }
             _ => -1,
         }
     }
@@ -61,6 +66,8 @@ impl IComponentBase for JsonSchema1C {
             (2, 1) => "ИспользоватьДопФорматы",
             (3, 0) => "Version",
             (3, 1) => "Версия",
+            (4, 0) => "IgnoreUnknownFormats",
+            (4, 1) => "ИгнорироватьНеизвестныеФорматы",
             _ => unreachable!(),
         }
     }
@@ -75,10 +82,9 @@ impl IComponentBase for JsonSchema1C {
                 *var_prop_val =
                     Variant::utf16_string(self, self.output_format.as_deref().unwrap_or_default());
             }
-            2 => {
-                *var_prop_val = Variant::from(self.use_custom_formats);
-            }
+            2 => *var_prop_val = Variant::from(self.use_custom_formats),
             3 => *var_prop_val = Variant::utf16_string(self, std::env!("CARGO_PKG_VERSION")),
+            4 => *var_prop_val = Variant::from(self.ignore_unknown_formats),
             _ => unreachable!(),
         }
         true
@@ -99,6 +105,13 @@ impl IComponentBase for JsonSchema1C {
                 } else {
                     return false;
                 };
+            }
+            4 => {
+                if let Some(value) = var_prop_val.as_bool() {
+                    self.ignore_unknown_formats = value;
+                } else {
+                    return false;
+                }
             }
             _ => unreachable!(),
         }
@@ -281,6 +294,7 @@ impl JsonSchema1C {
             }
         }
 
+        schema_options.should_ignore_unknown_formats(self.ignore_unknown_formats);
         let schema = schema_options
             .with_resolver(Resolver::new(self.schema_store.clone()))
             .compile(&schema_value)
