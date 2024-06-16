@@ -85,7 +85,7 @@ impl IComponentBase for JsonSchema1C {
             2 => *var_prop_val = Variant::from(self.use_custom_formats),
             3 => *var_prop_val = Variant::utf16_string(self, std::env!("CARGO_PKG_VERSION")),
             4 => *var_prop_val = Variant::from(self.ignore_unknown_formats),
-            _ => unreachable!(),
+            _ => return false,
         }
         true
     }
@@ -97,7 +97,7 @@ impl IComponentBase for JsonSchema1C {
                     if value.is_empty() {
                         self.output_format = None;
                     } else {
-                    self.output_format = Some(value);
+                        self.output_format = Some(value);
                     }
                 } else {
                     return false;
@@ -117,7 +117,7 @@ impl IComponentBase for JsonSchema1C {
                     return false;
                 }
             }
-            _ => unreachable!(),
+            _ => return false,
         }
 
         true
@@ -227,7 +227,7 @@ impl IComponentBase for JsonSchema1C {
                     return false;
                 }
             }
-            _ => unreachable!(),
+            _ => return false,
         }
         true
     }
@@ -278,7 +278,7 @@ impl IComponentBase for JsonSchema1C {
                     *ret_vals = Variant::utf16_string(self, &e.to_string());
                 }
             }
-            _ => unreachable!(),
+            _ => return false,
         }
         true
     }
