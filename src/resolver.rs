@@ -1,25 +1,20 @@
 use anyhow::anyhow;
 use jsonschema::SchemaResolver;
 use serde_json::Value;
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::HashMap,
+    sync::{Arc, RwLock},
+};
 use url::Url;
 
 #[derive(Clone, Default)]
 pub struct Resolver {
-    schemas: HashMap<Url, Value>,
+    store: Arc<RwLock<HashMap<Url, Arc<Value>>>>,
 }
 
 impl Resolver {
-    pub fn add_schema(&mut self, url: Url, schema: Value) {
-        self.schemas.insert(url, schema);
-    }
-
-    pub fn remove_schema(&mut self, url: &Url) {
-        self.schemas.remove(url);
-    }
-
-    pub fn clear(&mut self) {
-        self.schemas.clear();
+    pub fn new(schemas: Arc<RwLock<HashMap<Url, Arc<Value>>>>) -> Self {
+        Self { store: schemas }
     }
 }
 
@@ -30,8 +25,8 @@ impl SchemaResolver for Resolver {
         url: &Url,
         _original_reference: &str,
     ) -> Result<std::sync::Arc<Value>, jsonschema::SchemaResolverError> {
-        match self.schemas.get(url) {
-            Some(v) => Ok(Arc::new(v.to_owned())),
+        match self.store.read().unwrap().get(url) {
+            Some(v) => Ok(v.clone()),
             None => Err(anyhow!("Schema {url} not found")),
         }
     }

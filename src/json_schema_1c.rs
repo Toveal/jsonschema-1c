@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::error::Error;
 use std::str::FromStr;
+use std::sync::{Arc, RwLock};
 
 use native_1c::component::IComponentBase;
 use native_1c::native_macro::native_object;
@@ -20,11 +22,14 @@ pub struct JsonSchema1C {
     use_custom_formats: bool,
     resolver: Resolver,
     last_error: Option<Box<dyn Error>>,
+    schema_store: Arc<RwLock<HashMap<Url, Arc<Value>>>>,
+    ignore_unknown_formats: bool,
 }
 
 impl IComponentBase for JsonSchema1C {
     fn init(&mut self) -> bool {
         self.use_custom_formats = true;
+        self.ignore_unknown_formats = true;
         true
     }
 
@@ -35,7 +40,7 @@ impl IComponentBase for JsonSchema1C {
     fn done(&mut self) {}
 
     fn get_n_props(&self) -> i32 {
-        4
+        5
     }
 
     fn find_prop(&self, prop_name: &str) -> i32 {
@@ -44,6 +49,9 @@ impl IComponentBase for JsonSchema1C {
             "Format" | "Формат" => 1,
             "UseCustomFormats" | "ИспользоватьДопФорматы" => 2,
             "Version" | "Версия" => 3,
+            "IgnoreUnknownFormats" | "ИгнорироватьНеизвестныеФорматы" => {
+                4
+            }
             _ => -1,
         }
     }
@@ -58,6 +66,8 @@ impl IComponentBase for JsonSchema1C {
             (2, 1) => "ИспользоватьДопФорматы",
             (3, 0) => "Version",
             (3, 1) => "Версия",
+            (4, 0) => "IgnoreUnknownFormats",
+            (4, 1) => "ИгнорироватьНеизвестныеФорматы",
             _ => unreachable!(),
         }
     }
@@ -72,44 +82,42 @@ impl IComponentBase for JsonSchema1C {
                 *var_prop_val =
                     Variant::utf16_string(self, self.output_format.as_deref().unwrap_or_default());
             }
-            2 => {
-                *var_prop_val = Variant::from(self.use_custom_formats);
-            }
+            2 => *var_prop_val = Variant::from(self.use_custom_formats),
             3 => *var_prop_val = Variant::utf16_string(self, std::env!("CARGO_PKG_VERSION")),
-            _ => unreachable!(),
+            4 => *var_prop_val = Variant::from(self.ignore_unknown_formats),
+            _ => return false,
         }
         true
     }
 
     fn set_prop_val(&mut self, prop_num: i32, var_prop_val: &Variant) -> bool {
         match prop_num {
-            0 => {
-                let Some(value) = var_prop_val.as_string() else {
-                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
+            1 => {
+                if let Some(value) = var_prop_val.as_string() {
+                    if value.is_empty() {
+                        self.output_format = None;
+                    } else {
+                        self.output_format = Some(value);
+                    }
+                } else {
                     return false;
                 };
-                if let Err(e) = self.set_schema(value) {
-                    self.add_error(e);
+            }
+            2 => {
+                if let Some(value) = var_prop_val.as_bool() {
+                    self.use_custom_formats = value;
+                } else {
+                    return false;
+                };
+            }
+            4 => {
+                if let Some(value) = var_prop_val.as_bool() {
+                    self.ignore_unknown_formats = value;
+                } else {
                     return false;
                 }
             }
-            1 => {
-                let Some(value) = var_prop_val.as_string() else {
-                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
-                    return false;
-                };
-                self.output_format = Some(value);
-            }
-            2 => {
-                let Some(value) = var_prop_val.as_bool() else {
-                    self.add_error(
-                        JsonSchema1CError::BooleanConverstionError { n_param: 1 }.into(),
-                    );
-                    return false;
-                };
-                self.use_custom_formats = value;
-            }
-            _ => unreachable!(),
+            _ => return false,
         }
 
         true
@@ -120,11 +128,11 @@ impl IComponentBase for JsonSchema1C {
     }
 
     fn is_prop_writeable(&self, prop_num: i32) -> bool {
-        prop_num != 3
+        !matches!(prop_num, 0 | 3)
     }
 
     fn get_n_methods(&self) -> i32 {
-        6
+        7
     }
 
     fn find_method(&self, method_name: &str) -> i32 {
@@ -135,6 +143,7 @@ impl IComponentBase for JsonSchema1C {
             "DeleteScheme" | "УдалитьСхему" => 3,
             "DeleteAllSchemes" | "УдалитьВсеСхемы" => 4,
             "GetLastError" | "ПолучитьПоследнююОшибку" => 5,
+            "SetMainScheme" | "УстановитьОсновнуюСхему" => 6,
             _ => -1,
         }
     }
@@ -153,13 +162,15 @@ impl IComponentBase for JsonSchema1C {
             (4, 1) => "УдалитьВсеСхемы",
             (5, 0) => "GetLastError",
             (5, 1) => "ПолучитьПоследнююОшибку",
+            (6, 0) => "SetMainScheme",
+            (6, 1) => "УстановитьОсновнуюСхему",
             _ => unreachable!(),
         }
     }
 
     fn get_n_params(&self, method_num: i32) -> i32 {
         match method_num {
-            0 | 2 | 3 => 1,
+            0 | 2 | 3 | 6 => 1,
             1 => 2,
             _ => 0,
         }
@@ -204,7 +215,19 @@ impl IComponentBase for JsonSchema1C {
                 }
             }
             4 => self.clear_additional_schemes(),
-            _ => unreachable!(),
+            6 => {
+                let params = params.unwrap();
+                let Some(value) = params.first().unwrap().as_string() else {
+                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
+                    return false;
+                };
+
+                if let Err(e) = self.set_schema(value) {
+                    self.add_error(e);
+                    return false;
+                }
+            }
+            _ => return false,
         }
         true
     }
@@ -253,9 +276,11 @@ impl IComponentBase for JsonSchema1C {
             5 => {
                 if let Some(e) = self.last_error.as_ref() {
                     *ret_vals = Variant::utf16_string(self, &e.to_string());
+                } else {
+                    *ret_vals = Variant::empty();
                 }
             }
-            _ => unreachable!(),
+            _ => return false,
         }
         true
     }
@@ -265,7 +290,8 @@ impl IComponentBase for JsonSchema1C {
 
 impl JsonSchema1C {
     fn set_schema(&mut self, text: String) -> Result<(), Box<dyn Error>> {
-        let schema_value: serde_json::Value = serde_json::from_str(&text)?;
+        let schema_value: serde_json::Value =
+            serde_json::from_str(&text).map_err(JsonSchema1CError::from)?;
         let mut schema_options = jsonschema::JSONSchema::options();
 
         if self.use_custom_formats {
@@ -274,10 +300,11 @@ impl JsonSchema1C {
             }
         }
 
+        schema_options.should_ignore_unknown_formats(self.ignore_unknown_formats);
         let schema = schema_options
-            .with_resolver(self.resolver.clone())
+            .with_resolver(Resolver::new(self.schema_store.clone()))
             .compile(&schema_value)
-            .map_err(|_| JsonSchema1CError::SchemaCompile)?;
+            .map_err(JsonSchema1CError::from)?;
         self.compiled_schema = Some(schema);
         self.schema = Some(text);
         Ok(())
@@ -288,11 +315,13 @@ impl JsonSchema1C {
     }
 
     fn is_valid(&self, json: &str) -> Result<bool, Box<dyn Error>> {
-        let Some(schema) = &self.compiled_schema else {
-            return Err(JsonSchema1CError::SchemeNotInstalled.into());
-        };
-        let check_value: serde_json::Value = serde_json::from_str(json)?;
-        Ok(schema.is_valid(&check_value))
+        if let Some(schema) = &self.compiled_schema {
+            let check_value: serde_json::Value =
+                serde_json::from_str(json).map_err(JsonSchema1CError::from)?;
+            Ok(schema.is_valid(&check_value))
+        } else {
+            Err(JsonSchema1CError::SchemeNotInstalled.into())
+        }
     }
 
     fn validate(&self, json: &str, buf: &mut String) -> Result<bool, Box<dyn Error>> {
@@ -300,7 +329,8 @@ impl JsonSchema1C {
             return Err(JsonSchema1CError::SchemeNotInstalled.into());
         };
 
-        let check_value: serde_json::Value = serde_json::from_str(json)?;
+        let check_value: serde_json::Value =
+            serde_json::from_str(json).map_err(JsonSchema1CError::from)?;
         let validate_result = schema.validate(&check_value);
 
         if let Err(err_it) = validate_result {
@@ -325,26 +355,29 @@ impl JsonSchema1C {
     }
 
     fn add_additional_scheme(&mut self, json: &str) -> Result<(), Box<dyn Error>> {
-        let schema_value: Value = serde_json::from_str(json)?;
+        let schema_value: Value = serde_json::from_str(json).map_err(JsonSchema1CError::from)?;
         let schema_id = schema_value
             .get("$id")
             .ok_or(JsonSchema1CError::PropertyIdNotFound)?;
         let schema_url = schema_id
             .as_str()
             .ok_or(JsonSchema1CError::PropertyIdNotString)?;
-        let url = Url::from_str(schema_url).map_err(|_| JsonSchema1CError::UrlConversionError)?;
+        let url = Url::from_str(schema_url).map_err(JsonSchema1CError::from)?;
 
-        self.resolver.add_schema(url, schema_value);
+        self.schema_store
+            .write()
+            .unwrap()
+            .insert(url, Arc::new(schema_value));
         Ok(())
     }
 
     fn remove_additional_scheme(&mut self, url: &str) -> Result<(), JsonSchema1CError> {
-        let url = Url::from_str(url).map_err(|_| JsonSchema1CError::UrlConversionError)?;
-        self.resolver.remove_schema(&url);
+        let url = Url::from_str(url).map_err(JsonSchema1CError::from)?;
+        self.schema_store.write().unwrap().remove(&url);
         Ok(())
     }
 
     fn clear_additional_schemes(&mut self) {
-        self.resolver.clear();
+        self.schema_store.write().unwrap().clear();
     }
 }

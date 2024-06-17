@@ -2,10 +2,11 @@ use std::str::FromStr;
 use uuid::Uuid;
 
 type Format = (&'static str, fn(&str) -> bool);
-pub const FORMATS: [Format; 3] = [
+pub const FORMATS: [Format; 4] = [
     ("uuid", uuid),
     ("ru-inn-individual", ru_inn_individual),
     ("ru-inn-legal-entity", ru_inn_legal_entity),
+    ("kz-iin", kz_iin),
 ];
 
 fn uuid(r: &str) -> bool {
@@ -58,9 +59,49 @@ fn ru_inn_legal_entity(r: &str) -> bool {
     r.chars().nth(9).unwrap().to_digit(10) == Some(checksum % 11 % 10)
 }
 
+fn kz_iin(r: &str) -> bool {
+    let first_symbol = r.chars().next();
+
+    if r.len() != 12 || r.chars().all(|ch| first_symbol == Some(ch)) {
+        return false;
+    }
+
+    let mut checksum = 0;
+
+    for (i, ch) in r.chars().take(11).enumerate() {
+        if let Some(num) = ch.to_digit(10) {
+            checksum += (u32::try_from(i).unwrap() + 1) * num;
+        } else {
+            return false;
+        }
+    }
+
+    let mut control_value = checksum % 11;
+
+    if control_value == 10 {
+        checksum = 0;
+        for (i, ch) in r.chars().take(11).enumerate() {
+            if let Some(num) = ch.to_digit(10) {
+                let mut t = (u32::try_from(i).unwrap() + 3) % 11;
+                if t == 0 {
+                    t = 11;
+                }
+                checksum += t * num;
+            } else {
+                return false;
+            }
+        }
+        control_value = checksum % 11;
+        if control_value == 10 {
+            return false;
+        }
+    }
+
+    r.chars().nth(11).unwrap().to_digit(10) == Some(control_value)
+}
 #[cfg(test)]
 mod tests {
-    use crate::formats::{ru_inn_individual, uuid};
+    use crate::formats::{kz_iin, ru_inn_individual, uuid};
 
     use super::ru_inn_legal_entity;
 
@@ -170,5 +211,30 @@ mod tests {
             false,
             true,
         );
+    }
+
+    #[test]
+    fn valid_kz_iin() {
+        let inn = [
+            "181228500010",
+            "730703400015",
+            "170624600015",
+            "910701300010",
+            "840101400014",
+            "730812300016",
+            "150109600011",
+        ];
+
+        for el in inn {
+            assert!(kz_iin(el));
+        }
+    }
+
+    #[test]
+    fn invalid_kz_iin() {
+        let inn = ["123", "842101400014", "150105600011"];
+        for el in inn {
+            assert!(!kz_iin(el));
+        }
     }
 }
