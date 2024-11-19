@@ -1,28 +1,26 @@
 use std::collections::HashMap;
 use std::error::Error;
-use std::str::FromStr;
-use std::sync::{Arc, RwLock};
 
+use fluent_uri::Uri;
 use native_1c::component::IComponentBase;
 use native_1c::native_macro::native_object;
 use native_1c::types::Variant;
 use serde_json::Value;
-use url::Url;
 
 use crate::errors::JsonSchema1CError;
 use crate::formats::FORMATS;
-use crate::resolver::Resolver;
+use crate::retrieve_handler::RetrieveHandler;
 
 #[native_object]
 #[repr(C)]
 pub struct JsonSchema1C {
     schema: Option<String>,
-    compiled_schema: Option<jsonschema::JSONSchema>,
+    compiled_schema: Option<jsonschema::Validator>,
     output_format: Option<String>,
     use_custom_formats: bool,
-    resolver: Resolver,
+    resolver: RetrieveHandler,
     last_error: Option<Box<dyn Error>>,
-    schema_store: Arc<RwLock<HashMap<Url, Arc<Value>>>>,
+    schema_store: HashMap<Uri<String>, Value>,
     ignore_unknown_formats: bool,
 }
 
@@ -203,7 +201,7 @@ impl IComponentBase for JsonSchema1C {
                 }
             }
             3 => {
-                let params = params.unwrap();
+                let params = params.unwrap_or_default();
                 let Some(key) = params.first().unwrap().as_string() else {
                     self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
                     return false;
@@ -292,7 +290,7 @@ impl JsonSchema1C {
     fn set_schema(&mut self, text: String) -> Result<(), Box<dyn Error>> {
         let schema_value: serde_json::Value =
             serde_json::from_str(&text).map_err(JsonSchema1CError::from)?;
-        let mut schema_options = jsonschema::JSONSchema::options();
+        let mut schema_options = jsonschema::options();
 
         if self.use_custom_formats {
             for (name, function) in FORMATS {
@@ -302,8 +300,8 @@ impl JsonSchema1C {
 
         schema_options.should_ignore_unknown_formats(self.ignore_unknown_formats);
         let schema = schema_options
-            .with_resolver(Resolver::new(self.schema_store.clone()))
-            .compile(&schema_value)
+            .with_retriever(RetrieveHandler::new(self.schema_store.clone()))
+            .build(&schema_value)
             .map_err(JsonSchema1CError::from)?;
         self.compiled_schema = Some(schema);
         self.schema = Some(text);
@@ -333,24 +331,23 @@ impl JsonSchema1C {
             serde_json::from_str(json).map_err(JsonSchema1CError::from)?;
         let validate_result = schema.validate(&check_value);
 
-        if let Err(err_it) = validate_result {
-            let errors: Vec<String> = if let Some(format) = &self.output_format {
-                err_it
-                    .map(|e| {
-                        format
-                            .replace("{path}", &e.instance_path.to_string())
-                            .replace("{instance}", &e.instance.to_string())
-                            .replace("{schema_path}", &e.schema_path.to_string())
-                            .replace("{error}", &e.to_string())
-                    })
-                    .collect()
-            } else {
-                err_it.map(|e| e.to_string()).collect()
-            };
-            *buf = serde_json::to_string(&errors)?;
-            Ok(false)
-        } else {
-            Ok(true)
+        let validate_r = validate_result
+            .map_err(|e| match &self.output_format {
+                Some(f) => f
+                    .replace("{path}", &e.instance_path.to_string())
+                    .replace("{instance}", &e.instance.to_string())
+                    .replace("{schema_path}", &e.schema_path.to_string())
+                    .replace("{error}", &e.to_string()),
+                None => e.to_string(),
+            })
+            .map(|()| true);
+
+        match validate_r {
+            Ok(_) => Ok(true),
+            Err(e) => {
+                *buf = serde_json::to_string(&e)?;
+                Ok(false)
+            }
         }
     }
 
@@ -362,22 +359,19 @@ impl JsonSchema1C {
         let schema_url = schema_id
             .as_str()
             .ok_or(JsonSchema1CError::PropertyIdNotString)?;
-        let url = Url::from_str(schema_url).map_err(JsonSchema1CError::from)?;
+        let uri = Uri::parse(schema_url.to_string()).map_err(JsonSchema1CError::from)?;
+        self.schema_store.insert(uri, schema_value);
 
-        self.schema_store
-            .write()
-            .unwrap()
-            .insert(url, Arc::new(schema_value));
         Ok(())
     }
 
     fn remove_additional_scheme(&mut self, url: &str) -> Result<(), JsonSchema1CError> {
-        let url = Url::from_str(url).map_err(JsonSchema1CError::from)?;
-        self.schema_store.write().unwrap().remove(&url);
+        let url = Uri::parse(url.to_string()).map_err(JsonSchema1CError::from)?;
+        self.schema_store.remove(&url);
         Ok(())
     }
 
     fn clear_additional_schemes(&mut self) {
-        self.schema_store.write().unwrap().clear();
+        self.schema_store.clear();
     }
 }
