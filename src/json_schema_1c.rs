@@ -338,10 +338,10 @@ impl JsonSchema1C {
                 err_it
                     .map(|e| {
                         format
-                            .replace("{{$path}}", &e.instance_path.to_string())
-                            .replace("{{$instance}}", &e.instance.to_string())
-                            .replace("{{$schema_path}}", &e.schema_path.to_string())
-                            .replace("{{$error}}", &e.to_string())
+                            .replace("{path}", &e.instance_path.to_string())
+                            .replace("{instance}", &e.instance.to_string())
+                            .replace("{schema_path}", &e.schema_path.to_string())
+                            .replace("{error}", &e.to_string())
                     })
                     .collect()
             } else {
