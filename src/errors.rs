@@ -10,6 +10,7 @@ pub enum JsonSchema1CError {
     UriConversionError { msg: ParseError<String> },
     PropertyIdNotString,
     JsonReadError { msg: serde_json::Error },
+    ParamUnpackError,
 }
 
 impl Error for JsonSchema1CError {}
@@ -32,6 +33,9 @@ impl std::fmt::Display for JsonSchema1CError {
             }
             JsonSchema1CError::PropertyIdNotString => write!(f, "Property '$id' is not a string"),
             JsonSchema1CError::JsonReadError { msg } => write!(f, "JSON reading error: {msg}"),
+            JsonSchema1CError::ParamUnpackError => {
+                write!(f, "Internal component error. Expected parameter not found")
+            }
         }
     }
 }

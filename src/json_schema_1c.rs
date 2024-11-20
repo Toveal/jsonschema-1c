@@ -10,6 +10,9 @@ use serde_json::Value;
 use crate::errors::JsonSchema1CError;
 use crate::formats::FORMATS;
 use crate::retrieve_handler::RetrieveHandler;
+use crate::tools::unpack_first_param;
+
+type Params<'a> = Option<&'a mut [Variant]>;
 
 #[native_object]
 #[repr(C)]
@@ -188,46 +191,23 @@ impl IComponentBase for JsonSchema1C {
     }
 
     fn call_as_proc(&mut self, method_num: i32, params: Option<&mut [Variant]>) -> bool {
-        match method_num {
-            2 => {
-                let params = params.unwrap();
-                let Some(value) = params.first().unwrap().as_string() else {
-                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
-                    return false;
-                };
-                if let Err(e) = self.add_additional_scheme(&value) {
-                    self.add_error(e);
-                    return false;
-                }
+        let call_result = match method_num {
+            2 => self.add_additional_scheme(params),
+            3 => self.remove_additional_scheme(params),
+            4 => {
+                self.clear_additional_schemes();
+                Ok(())
             }
-            3 => {
-                let params = params.unwrap_or_default();
-                let Some(key) = params.first().unwrap().as_string() else {
-                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
-                    return false;
-                };
-
-                if let Err(e) = self.remove_additional_scheme(&key) {
-                    self.add_error(e.into());
-                    return false;
-                }
+            6 => self.set_main_schema(params),
+            _ => unreachable!(),
+        };
+        match call_result {
+            Ok(()) => true,
+            Err(e) => {
+                self.add_error(e);
+                false
             }
-            4 => self.clear_additional_schemes(),
-            6 => {
-                let params = params.unwrap();
-                let Some(value) = params.first().unwrap().as_string() else {
-                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
-                    return false;
-                };
-
-                if let Err(e) = self.set_schema(value) {
-                    self.add_error(e);
-                    return false;
-                }
-            }
-            _ => return false,
         }
-        true
     }
 
     fn call_as_func(
@@ -287,9 +267,14 @@ impl IComponentBase for JsonSchema1C {
 }
 
 impl JsonSchema1C {
-    fn set_schema(&mut self, text: String) -> Result<(), Box<dyn Error>> {
+    fn set_main_schema(&mut self, params: Params) -> Result<(), Box<dyn Error>> {
+        let param_value = unpack_first_param(params)?
+            .as_string()
+            .ok_or(JsonSchema1CError::StringConversionError { n_param: 1 })?;
+
         let schema_value: serde_json::Value =
-            serde_json::from_str(&text).map_err(JsonSchema1CError::from)?;
+            serde_json::from_str(&param_value).map_err(JsonSchema1CError::from)?;
+
         let mut schema_options = jsonschema::options();
 
         if self.use_custom_formats {
@@ -304,7 +289,7 @@ impl JsonSchema1C {
             .build(&schema_value)
             .map_err(JsonSchema1CError::from)?;
         self.compiled_schema = Some(schema);
-        self.schema = Some(text);
+        self.schema = Some(param_value);
         Ok(())
     }
 
@@ -351,23 +336,31 @@ impl JsonSchema1C {
         }
     }
 
-    fn add_additional_scheme(&mut self, json: &str) -> Result<(), Box<dyn Error>> {
-        let schema_value: Value = serde_json::from_str(json).map_err(JsonSchema1CError::from)?;
+    fn add_additional_scheme(&mut self, params: Params) -> Result<(), Box<dyn Error>> {
+        let json = unpack_first_param(params)?
+            .as_string()
+            .ok_or(JsonSchema1CError::StringConversionError { n_param: 1 })?;
+
+        let schema_value: Value = serde_json::from_str(&json).map_err(JsonSchema1CError::from)?;
         let schema_id = schema_value
             .get("$id")
             .ok_or(JsonSchema1CError::PropertyIdNotFound)?;
-        let schema_url = schema_id
+
+        let schema_uri = schema_id
             .as_str()
             .ok_or(JsonSchema1CError::PropertyIdNotString)?;
-        let uri = Uri::parse(schema_url.to_string()).map_err(JsonSchema1CError::from)?;
+        let uri = Uri::parse(schema_uri.to_string()).map_err(JsonSchema1CError::from)?;
         self.schema_store.insert(uri, schema_value);
 
         Ok(())
     }
 
-    fn remove_additional_scheme(&mut self, url: &str) -> Result<(), JsonSchema1CError> {
-        let url = Uri::parse(url.to_string()).map_err(JsonSchema1CError::from)?;
-        self.schema_store.remove(&url);
+    fn remove_additional_scheme(&mut self, params: Params) -> Result<(), Box<dyn Error>> {
+        let param_value = unpack_first_param(params)?
+            .as_string()
+            .ok_or(JsonSchema1CError::StringConversionError { n_param: 1 })?;
+        let uri = Uri::parse(param_value)?;
+        self.schema_store.remove(&uri);
         Ok(())
     }
 
