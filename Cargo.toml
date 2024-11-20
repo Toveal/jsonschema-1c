@@ -11,19 +11,11 @@ crate-type = ["cdylib"]
 native-1c = { git = "https://github.com/tuplecats/rust-native-1c" }
 jsonschema = "0.26.1"
 serde_json = "1.0"
-regex = "1.10.4"
 fluent-uri = "0.3.2"
-
-[dependencies.uuid]
-version = "1.8.0"
-features = ["v4"]
 
 [profile.dev.package]
 insta.opt-level = 3
 similar.opt-level = 3
-
-[dev-dependencies]
-insta = { version = "1.31.0", features = ["redactions"] }
 
 [profile.release]
 opt-level = "z"

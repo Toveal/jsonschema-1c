@@ -1,17 +1,9 @@
-use std::str::FromStr;
-use uuid::Uuid;
-
 type Format = (&'static str, fn(&str) -> bool);
-pub const FORMATS: [Format; 4] = [
-    ("uuid", uuid),
+pub const FORMATS: [Format; 3] = [
     ("ru-inn-individual", ru_inn_individual),
     ("ru-inn-legal-entity", ru_inn_legal_entity),
     ("kz-iin", kz_iin),
 ];
-
-fn uuid(r: &str) -> bool {
-    Uuid::from_str(r).is_ok()
-}
 
 fn ru_inn_individual(r: &str) -> bool {
     if r.len() != 12 || r.starts_with("00") {
@@ -101,19 +93,9 @@ fn kz_iin(r: &str) -> bool {
 }
 #[cfg(test)]
 mod tests {
-    use crate::formats::{kz_iin, ru_inn_individual, uuid};
+    use crate::formats::{kz_iin, ru_inn_individual};
 
     use super::ru_inn_legal_entity;
-
-    #[test]
-    fn valid_uuid() {
-        assert!(uuid("539e73de-a2a8-4e8f-907d-0d6c1139bbbf"));
-    }
-
-    #[test]
-    fn invalid_uuid() {
-        assert!(!uuid("539e73deAAA-a2a8-4e8f-907d-2139bbbf"));
-    }
 
     fn check_inn(inn_list: &[&str], is_individual: bool, expected: bool) {
         for inn in inn_list {
