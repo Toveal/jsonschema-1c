@@ -1,28 +1,29 @@
 use std::collections::HashMap;
 use std::error::Error;
-use std::str::FromStr;
-use std::sync::{Arc, RwLock};
 
+use fluent_uri::Uri;
 use native_1c::component::IComponentBase;
 use native_1c::native_macro::native_object;
 use native_1c::types::Variant;
 use serde_json::Value;
-use url::Url;
 
 use crate::errors::JsonSchema1CError;
 use crate::formats::FORMATS;
-use crate::resolver::Resolver;
+use crate::retrieve_handler::RetrieveHandler;
+use crate::tools::{unpack_first_param, unpack_two_params};
+
+type Params<'a> = Option<&'a mut [Variant]>;
 
 #[native_object]
 #[repr(C)]
 pub struct JsonSchema1C {
     schema: Option<String>,
-    compiled_schema: Option<jsonschema::JSONSchema>,
+    compiled_schema: Option<jsonschema::Validator>,
     output_format: Option<String>,
     use_custom_formats: bool,
-    resolver: Resolver,
+    resolver: RetrieveHandler,
     last_error: Option<Box<dyn Error>>,
-    schema_store: Arc<RwLock<HashMap<Url, Arc<Value>>>>,
+    schema_store: HashMap<Uri<String>, Value>,
     ignore_unknown_formats: bool,
 }
 
@@ -190,46 +191,23 @@ impl IComponentBase for JsonSchema1C {
     }
 
     fn call_as_proc(&mut self, method_num: i32, params: Option<&mut [Variant]>) -> bool {
-        match method_num {
-            2 => {
-                let params = params.unwrap();
-                let Some(value) = params.first().unwrap().as_string() else {
-                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
-                    return false;
-                };
-                if let Err(e) = self.add_additional_scheme(&value) {
-                    self.add_error(e);
-                    return false;
-                }
+        let call_result = match method_num {
+            2 => self.add_additional_scheme(params),
+            3 => self.remove_additional_scheme(params),
+            4 => {
+                self.clear_additional_schemes();
+                Ok(())
             }
-            3 => {
-                let params = params.unwrap();
-                let Some(key) = params.first().unwrap().as_string() else {
-                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
-                    return false;
-                };
-
-                if let Err(e) = self.remove_additional_scheme(&key) {
-                    self.add_error(e.into());
-                    return false;
-                }
+            6 => self.set_main_schema(params),
+            _ => unreachable!(),
+        };
+        match call_result {
+            Ok(()) => true,
+            Err(e) => {
+                self.add_error(e);
+                false
             }
-            4 => self.clear_additional_schemes(),
-            6 => {
-                let params = params.unwrap();
-                let Some(value) = params.first().unwrap().as_string() else {
-                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
-                    return false;
-                };
-
-                if let Err(e) = self.set_schema(value) {
-                    self.add_error(e);
-                    return false;
-                }
-            }
-            _ => return false,
         }
-        true
     }
 
     fn call_as_func(
@@ -238,61 +216,38 @@ impl IComponentBase for JsonSchema1C {
         ret_vals: &mut Variant,
         params: Option<&mut [Variant]>,
     ) -> bool {
-        match method_num {
-            0 => {
-                let params_mut = params.unwrap();
-                let Some(json) = params_mut.first().unwrap().as_string() else {
-                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
-                    return false;
-                };
+        let call_result = match method_num {
+            0 => self.is_valid(params),
+            1 => self.validate(params),
+            5 => Ok(self.get_last_error()),
+            _ => unreachable!(),
+        };
 
-                match self.is_valid(&json) {
-                    Ok(v) => *ret_vals = Variant::from(v),
-                    Err(e) => {
-                        self.add_error(e);
-                        return false;
-                    }
-                }
+        match call_result {
+            Ok(v) => {
+                *ret_vals = v;
+                true
             }
-            1 => {
-                let params_mut = params.unwrap();
-                let Some(json) = params_mut.first().unwrap().as_string() else {
-                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
-                    return false;
-                };
-
-                let mut buf = String::new();
-                match self.validate(&json, &mut buf) {
-                    Ok(v) => {
-                        *ret_vals = Variant::from(v);
-                        params_mut[1] = Variant::utf16_string(self, &buf);
-                    }
-                    Err(e) => {
-                        self.add_error(e);
-                        return false;
-                    }
-                }
+            Err(e) => {
+                self.add_error(e);
+                false
             }
-            5 => {
-                if let Some(e) = self.last_error.as_ref() {
-                    *ret_vals = Variant::utf16_string(self, &e.to_string());
-                } else {
-                    *ret_vals = Variant::empty();
-                }
-            }
-            _ => return false,
         }
-        true
     }
 
     fn set_locale(&mut self, _loc: &str) {}
 }
 
 impl JsonSchema1C {
-    fn set_schema(&mut self, text: String) -> Result<(), Box<dyn Error>> {
+    fn set_main_schema(&mut self, params: Params) -> Result<(), Box<dyn Error>> {
+        let param_value = unpack_first_param(params)?
+            .as_string()
+            .ok_or(JsonSchema1CError::StringConversionError { n_param: 1 })?;
+
         let schema_value: serde_json::Value =
-            serde_json::from_str(&text).map_err(JsonSchema1CError::from)?;
-        let mut schema_options = jsonschema::JSONSchema::options();
+            serde_json::from_str(&param_value).map_err(JsonSchema1CError::from)?;
+
+        let mut schema_options = jsonschema::options();
 
         if self.use_custom_formats {
             for (name, function) in FORMATS {
@@ -302,11 +257,11 @@ impl JsonSchema1C {
 
         schema_options.should_ignore_unknown_formats(self.ignore_unknown_formats);
         let schema = schema_options
-            .with_resolver(Resolver::new(self.schema_store.clone()))
-            .compile(&schema_value)
+            .with_retriever(RetrieveHandler::new(self.schema_store.clone()))
+            .build(&schema_value)
             .map_err(JsonSchema1CError::from)?;
         self.compiled_schema = Some(schema);
-        self.schema = Some(text);
+        self.schema = Some(param_value);
         Ok(())
     }
 
@@ -314,70 +269,91 @@ impl JsonSchema1C {
         self.last_error = Some(error);
     }
 
-    fn is_valid(&self, json: &str) -> Result<bool, Box<dyn Error>> {
+    fn is_valid(&self, params: Params) -> Result<Variant, Box<dyn Error>> {
         if let Some(schema) = &self.compiled_schema {
+            let json = unpack_first_param(params)?
+                .as_string()
+                .ok_or(JsonSchema1CError::StringConversionError { n_param: 1 })?;
             let check_value: serde_json::Value =
-                serde_json::from_str(json).map_err(JsonSchema1CError::from)?;
-            Ok(schema.is_valid(&check_value))
+                serde_json::from_str(&json).map_err(JsonSchema1CError::from)?;
+            Ok(Variant::from(schema.is_valid(&check_value)))
         } else {
             Err(JsonSchema1CError::SchemeNotInstalled.into())
         }
     }
 
-    fn validate(&self, json: &str, buf: &mut String) -> Result<bool, Box<dyn Error>> {
+    fn validate(&self, params: Params) -> Result<Variant, Box<dyn Error>> {
         let Some(schema) = &self.compiled_schema else {
             return Err(JsonSchema1CError::SchemeNotInstalled.into());
         };
 
-        let check_value: serde_json::Value =
-            serde_json::from_str(json).map_err(JsonSchema1CError::from)?;
-        let validate_result = schema.validate(&check_value);
+        let [p1, p2] = unpack_two_params(params)?;
+        let json = p1
+            .as_string()
+            .ok_or(JsonSchema1CError::StringConversionError { n_param: 1 })?;
 
-        if let Err(err_it) = validate_result {
-            let errors: Vec<String> = if let Some(format) = &self.output_format {
-                err_it
-                    .map(|e| {
-                        format
-                            .replace("{path}", &e.instance_path.to_string())
-                            .replace("{instance}", &e.instance.to_string())
-                            .replace("{schema_path}", &e.schema_path.to_string())
-                            .replace("{error}", &e.to_string())
-                    })
-                    .collect()
-            } else {
-                err_it.map(|e| e.to_string()).collect()
-            };
-            *buf = serde_json::to_string(&errors)?;
-            Ok(false)
+        let check_value: serde_json::Value =
+            serde_json::from_str(&json).map_err(JsonSchema1CError::from)?;
+
+        let err_iter = schema.iter_errors(&check_value);
+        let validate_result: Vec<String> = match &self.output_format {
+            Some(f) => err_iter
+                .map(|e| {
+                    f.replace("{path}", &e.instance_path.to_string())
+                        .replace("{instance}", &e.instance.to_string())
+                        .replace("{schema_path}", &e.schema_path.to_string())
+                        .replace("{error}", &e.to_string())
+                })
+                .collect(),
+            None => err_iter.map(|e| e.to_string()).collect(),
+        };
+
+        if validate_result.is_empty() {
+            Ok(Variant::from(true))
         } else {
-            Ok(true)
+            let result_json = serde_json::to_string(&validate_result)?;
+            *p2 = Variant::utf16_string(self, &result_json);
+            Ok(Variant::from(false))
         }
     }
 
-    fn add_additional_scheme(&mut self, json: &str) -> Result<(), Box<dyn Error>> {
-        let schema_value: Value = serde_json::from_str(json).map_err(JsonSchema1CError::from)?;
+    fn add_additional_scheme(&mut self, params: Params) -> Result<(), Box<dyn Error>> {
+        let json = unpack_first_param(params)?
+            .as_string()
+            .ok_or(JsonSchema1CError::StringConversionError { n_param: 1 })?;
+
+        let schema_value: Value = serde_json::from_str(&json).map_err(JsonSchema1CError::from)?;
         let schema_id = schema_value
             .get("$id")
             .ok_or(JsonSchema1CError::PropertyIdNotFound)?;
-        let schema_url = schema_id
+
+        let schema_uri = schema_id
             .as_str()
             .ok_or(JsonSchema1CError::PropertyIdNotString)?;
-        let url = Url::from_str(schema_url).map_err(JsonSchema1CError::from)?;
+        let uri = Uri::parse(schema_uri.to_string()).map_err(JsonSchema1CError::from)?;
+        self.schema_store.insert(uri, schema_value);
 
-        self.schema_store
-            .write()
-            .unwrap()
-            .insert(url, Arc::new(schema_value));
         Ok(())
     }
 
-    fn remove_additional_scheme(&mut self, url: &str) -> Result<(), JsonSchema1CError> {
-        let url = Url::from_str(url).map_err(JsonSchema1CError::from)?;
-        self.schema_store.write().unwrap().remove(&url);
+    fn remove_additional_scheme(&mut self, params: Params) -> Result<(), Box<dyn Error>> {
+        let param_value = unpack_first_param(params)?
+            .as_string()
+            .ok_or(JsonSchema1CError::StringConversionError { n_param: 1 })?;
+        let uri = Uri::parse(param_value)?;
+        self.schema_store.remove(&uri);
         Ok(())
     }
 
     fn clear_additional_schemes(&mut self) {
-        self.schema_store.write().unwrap().clear();
+        self.schema_store.clear();
+    }
+
+    fn get_last_error(&self) -> Variant {
+        if let Some(e) = self.last_error.as_ref() {
+            Variant::utf16_string(self, &e.to_string())
+        } else {
+            Variant::empty()
+        }
     }
 }

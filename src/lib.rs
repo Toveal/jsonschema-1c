@@ -3,7 +3,8 @@
 mod errors;
 mod formats;
 mod json_schema_1c;
-mod resolver;
+mod retrieve_handler;
+mod tools;
 
 use native_1c::component::AppCapabilities;
 use native_1c::widestring::{U16CStr, U16CString};

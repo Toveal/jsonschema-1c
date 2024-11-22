@@ -1,3 +1,4 @@
+use fluent_uri::error::ParseError;
 use std::error::Error;
 
 #[derive(Debug)]
@@ -6,9 +7,10 @@ pub enum JsonSchema1CError {
     SchemeNotInstalled,
     StringConversionError { n_param: u32 },
     PropertyIdNotFound,
-    UrlConversionError { msg: url::ParseError },
+    UriConversionError { msg: ParseError<String> },
     PropertyIdNotString,
     JsonReadError { msg: serde_json::Error },
+    ParamUnpackError,
 }
 
 impl Error for JsonSchema1CError {}
@@ -26,11 +28,14 @@ impl std::fmt::Display for JsonSchema1CError {
             JsonSchema1CError::PropertyIdNotFound => {
                 write!(f, "Property '$id' not found in the schema")
             }
-            JsonSchema1CError::UrlConversionError { msg } => {
+            JsonSchema1CError::UriConversionError { msg } => {
                 write!(f, "Failed to convert id to url: {msg}")
             }
             JsonSchema1CError::PropertyIdNotString => write!(f, "Property '$id' is not a string"),
             JsonSchema1CError::JsonReadError { msg } => write!(f, "JSON reading error: {msg}"),
+            JsonSchema1CError::ParamUnpackError => {
+                write!(f, "Internal component error. Expected parameter not found")
+            }
         }
     }
 }
@@ -49,8 +54,8 @@ impl<'a> From<jsonschema::ValidationError<'a>> for JsonSchema1CError {
     }
 }
 
-impl From<url::ParseError> for JsonSchema1CError {
-    fn from(value: url::ParseError) -> Self {
-        JsonSchema1CError::UrlConversionError { msg: value }
+impl From<ParseError<String>> for JsonSchema1CError {
+    fn from(value: ParseError<String>) -> Self {
+        JsonSchema1CError::UriConversionError { msg: value }
     }
 }
