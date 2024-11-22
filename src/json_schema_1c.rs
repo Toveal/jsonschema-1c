@@ -10,7 +10,7 @@ use serde_json::Value;
 use crate::errors::JsonSchema1CError;
 use crate::formats::FORMATS;
 use crate::retrieve_handler::RetrieveHandler;
-use crate::tools::unpack_first_param;
+use crate::tools::{unpack_first_param, unpack_two_params};
 
 type Params<'a> = Option<&'a mut [Variant]>;
 
@@ -216,51 +216,23 @@ impl IComponentBase for JsonSchema1C {
         ret_vals: &mut Variant,
         params: Option<&mut [Variant]>,
     ) -> bool {
-        match method_num {
-            0 => {
-                let params_mut = params.unwrap();
-                let Some(json) = params_mut.first().unwrap().as_string() else {
-                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
-                    return false;
-                };
+        let call_result = match method_num {
+            0 => self.is_valid(params),
+            1 => self.validate(params),
+            5 => Ok(self.get_last_error()),
+            _ => unreachable!(),
+        };
 
-                match self.is_valid(&json) {
-                    Ok(v) => *ret_vals = Variant::from(v),
-                    Err(e) => {
-                        self.add_error(e);
-                        return false;
-                    }
-                }
+        match call_result {
+            Ok(v) => {
+                *ret_vals = v;
+                true
             }
-            1 => {
-                let params_mut = params.unwrap();
-                let Some(json) = params_mut.first().unwrap().as_string() else {
-                    self.add_error(JsonSchema1CError::StringConversionError { n_param: 1 }.into());
-                    return false;
-                };
-
-                let mut buf = String::new();
-                match self.validate(&json, &mut buf) {
-                    Ok(v) => {
-                        *ret_vals = Variant::from(v);
-                        params_mut[1] = Variant::utf16_string(self, &buf);
-                    }
-                    Err(e) => {
-                        self.add_error(e);
-                        return false;
-                    }
-                }
+            Err(e) => {
+                self.add_error(e);
+                false
             }
-            5 => {
-                if let Some(e) = self.last_error.as_ref() {
-                    *ret_vals = Variant::utf16_string(self, &e.to_string());
-                } else {
-                    *ret_vals = Variant::empty();
-                }
-            }
-            _ => return false,
         }
-        true
     }
 
     fn set_locale(&mut self, _loc: &str) {}
@@ -297,42 +269,51 @@ impl JsonSchema1C {
         self.last_error = Some(error);
     }
 
-    fn is_valid(&self, json: &str) -> Result<bool, Box<dyn Error>> {
+    fn is_valid(&self, params: Params) -> Result<Variant, Box<dyn Error>> {
         if let Some(schema) = &self.compiled_schema {
+            let json = unpack_first_param(params)?
+                .as_string()
+                .ok_or(JsonSchema1CError::StringConversionError { n_param: 1 })?;
             let check_value: serde_json::Value =
-                serde_json::from_str(json).map_err(JsonSchema1CError::from)?;
-            Ok(schema.is_valid(&check_value))
+                serde_json::from_str(&json).map_err(JsonSchema1CError::from)?;
+            Ok(Variant::from(schema.is_valid(&check_value)))
         } else {
             Err(JsonSchema1CError::SchemeNotInstalled.into())
         }
     }
 
-    fn validate(&self, json: &str, buf: &mut String) -> Result<bool, Box<dyn Error>> {
+    fn validate(&self, params: Params) -> Result<Variant, Box<dyn Error>> {
         let Some(schema) = &self.compiled_schema else {
             return Err(JsonSchema1CError::SchemeNotInstalled.into());
         };
 
+        let [p1, p2] = unpack_two_params(params)?;
+        let json = p1
+            .as_string()
+            .ok_or(JsonSchema1CError::StringConversionError { n_param: 1 })?;
+
         let check_value: serde_json::Value =
-            serde_json::from_str(json).map_err(JsonSchema1CError::from)?;
-        let validate_result = schema.validate(&check_value);
+            serde_json::from_str(&json).map_err(JsonSchema1CError::from)?;
 
-        let validate_r = validate_result
-            .map_err(|e| match &self.output_format {
-                Some(f) => f
-                    .replace("{path}", &e.instance_path.to_string())
-                    .replace("{instance}", &e.instance.to_string())
-                    .replace("{schema_path}", &e.schema_path.to_string())
-                    .replace("{error}", &e.to_string()),
-                None => e.to_string(),
-            })
-            .map(|()| true);
+        let err_iter = schema.iter_errors(&check_value);
+        let validate_result: Vec<String> = match &self.output_format {
+            Some(f) => err_iter
+                .map(|e| {
+                    f.replace("{path}", &e.instance_path.to_string())
+                        .replace("{instance}", &e.instance.to_string())
+                        .replace("{schema_path}", &e.schema_path.to_string())
+                        .replace("{error}", &e.to_string())
+                })
+                .collect(),
+            None => err_iter.map(|e| e.to_string()).collect(),
+        };
 
-        match validate_r {
-            Ok(_) => Ok(true),
-            Err(e) => {
-                *buf = serde_json::to_string(&e)?;
-                Ok(false)
-            }
+        if validate_result.is_empty() {
+            Ok(Variant::from(true))
+        } else {
+            let result_json = serde_json::to_string(&validate_result)?;
+            *p2 = Variant::utf16_string(self, &result_json);
+            Ok(Variant::from(false))
         }
     }
 
@@ -366,5 +347,13 @@ impl JsonSchema1C {
 
     fn clear_additional_schemes(&mut self) {
         self.schema_store.clear();
+    }
+
+    fn get_last_error(&self) -> Variant {
+        if let Some(e) = self.last_error.as_ref() {
+            Variant::utf16_string(self, &e.to_string())
+        } else {
+            Variant::empty()
+        }
     }
 }
