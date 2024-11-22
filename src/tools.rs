@@ -9,6 +9,7 @@ pub fn unpack_first_param(params: Option<&mut [Variant]>) -> Result<&Variant, Js
         .ok_or(JsonSchema1CError::ParamUnpackError)
 }
 
+#[allow(clippy::needless_pass_by_value)]
 pub fn unpack_two_params(
     params: Option<&mut [Variant]>,
 ) -> Result<[&mut Variant; 2], JsonSchema1CError> {
