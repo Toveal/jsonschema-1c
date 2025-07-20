@@ -17,7 +17,7 @@ impl RetrieveHandler {
 impl Retrieve for RetrieveHandler {
     fn retrieve(
         &self,
-        uri: &jsonschema::Uri<&str>,
+        uri: &fluent_uri::Uri<std::string::String>,
     ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         match self.store.get(uri.as_str()) {
             Some(v) => Ok(v.clone()),
