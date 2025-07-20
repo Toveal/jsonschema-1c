@@ -247,15 +247,16 @@ impl JsonSchema1C {
         let schema_value: serde_json::Value =
             serde_json::from_str(&param_value).map_err(JsonSchema1CError::from)?;
 
-        let mut schema_options = jsonschema::options();
+        let mut schema_options = jsonschema::options()
+            .should_ignore_unknown_formats(self.ignore_unknown_formats)
+            .should_validate_formats(true);
 
         if self.use_custom_formats {
             for (name, function) in FORMATS {
-                schema_options.with_format(name, function);
+                schema_options = schema_options.with_format(name, function);
             }
         }
 
-        schema_options.should_ignore_unknown_formats(self.ignore_unknown_formats);
         let schema = schema_options
             .with_retriever(RetrieveHandler::new(self.schema_store.clone()))
             .build(&schema_value)
