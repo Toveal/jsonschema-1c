@@ -25,12 +25,14 @@ pub struct JsonSchema1C {
     last_error: Option<Box<dyn Error>>,
     schema_store: HashMap<Uri<String>, Value>,
     ignore_unknown_formats: bool,
+    check_formats: bool,
 }
 
 impl IComponentBase for JsonSchema1C {
     fn init(&mut self) -> bool {
         self.use_custom_formats = true;
         self.ignore_unknown_formats = true;
+        self.check_formats = true;
         true
     }
 
@@ -41,7 +43,7 @@ impl IComponentBase for JsonSchema1C {
     fn done(&mut self) {}
 
     fn get_n_props(&self) -> i32 {
-        5
+        6
     }
 
     fn find_prop(&self, prop_name: &str) -> i32 {
@@ -52,7 +54,8 @@ impl IComponentBase for JsonSchema1C {
             "Version" | "Версия" => 3,
             "IgnoreUnknownFormats" | "ИгнорироватьНеизвестныеФорматы" => {
                 4
-            }
+            },
+            "CheckFormats" | "ПроверятьФорматы" => 5,
             _ => -1,
         }
     }
@@ -69,6 +72,8 @@ impl IComponentBase for JsonSchema1C {
             (3, 1) => "Версия",
             (4, 0) => "IgnoreUnknownFormats",
             (4, 1) => "ИгнорироватьНеизвестныеФорматы",
+            (5, 0) => "CheckFormats",
+            (5, 1) => "ПроверятьФорматы",
             _ => unreachable!(),
         }
     }
@@ -86,6 +91,7 @@ impl IComponentBase for JsonSchema1C {
             2 => *var_prop_val = Variant::from(self.use_custom_formats),
             3 => *var_prop_val = Variant::utf16_string(self, std::env!("CARGO_PKG_VERSION")),
             4 => *var_prop_val = Variant::from(self.ignore_unknown_formats),
+            5 => *var_prop_val = Variant::from(self.check_formats),
             _ => return false,
         }
         true
@@ -114,6 +120,13 @@ impl IComponentBase for JsonSchema1C {
             4 => {
                 if let Some(value) = var_prop_val.as_bool() {
                     self.ignore_unknown_formats = value;
+                } else {
+                    return false;
+                }
+            },
+            5 => {
+                if let Some(value) = var_prop_val.as_bool() {
+                    self.check_formats = value;
                 } else {
                     return false;
                 }
@@ -249,7 +262,7 @@ impl JsonSchema1C {
 
         let mut schema_options = jsonschema::options()
             .should_ignore_unknown_formats(self.ignore_unknown_formats)
-            .should_validate_formats(true);
+            .should_validate_formats(self.check_formats);
 
         if self.use_custom_formats {
             for (name, function) in FORMATS {
