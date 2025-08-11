@@ -1,6 +1,6 @@
 [package]
 name = "jsonschema_1c"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -12,7 +12,6 @@ native-1c = { git = "https://github.com/tuplecats/rust-native-1c" }
 jsonschema = { git = "https://github.com/Stranger6667/jsonschema" }
 serde_json = "1.0"
 fluent-uri = "0.3.2"
-regex = "1.11.1"
 
 [profile.release]
 opt-level = "z"
