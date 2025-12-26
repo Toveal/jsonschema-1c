@@ -1,8 +1,9 @@
 type Format = (&'static str, fn(&str) -> bool);
-pub const FORMATS: [Format; 3] = [
+pub const FORMATS: [Format; 4] = [
     ("ru-inn-individual", ru_inn_individual),
     ("ru-inn-legal-entity", ru_inn_legal_entity),
     ("kz-iin", kz_iin),
+    ("local-date-time", local_date_time),
 ];
 
 fn ru_inn_individual(r: &str) -> bool {
@@ -91,6 +92,149 @@ fn kz_iin(r: &str) -> bool {
 
     r.chars().nth(11).unwrap().to_digit(10) == Some(control_value)
 }
+
+fn local_date_time(datetime: &str) -> bool {
+    // Find the position of 'T' or 't' separator
+    let Some(t_pos) = datetime.bytes().position(|b| b == b'T' || b == b't') else {
+        return false;
+    };
+
+    // Split the string into date and time parts
+    let (date_part, time_part) = datetime.split_at(t_pos);
+
+    is_valid_date(date_part) && is_valid_time(&time_part[1..])
+}
+
+fn is_valid_date(date: &str) -> bool {
+    if date.len() != 10 {
+        return false;
+    }
+
+    let bytes = date.as_bytes();
+
+    // Check format: YYYY-MM-DD
+    if bytes[4] != b'-' || bytes[7] != b'-' {
+        return false;
+    }
+
+    // Parse year (YYYY)
+    let Some(year) = parse_four_digits(&bytes[0..4]) else {
+        return false;
+    };
+
+    // Parse month (MM)
+    let Some(month) = parse_two_digits(&bytes[5..7]) else {
+        return false;
+    };
+    if !(1..=12).contains(&month) {
+        return false;
+    }
+
+    // Parse day (DD)
+    let Some(day) = parse_two_digits(&bytes[8..10]) else {
+        return false;
+    };
+    if day == 0 {
+        return false;
+    }
+
+    // Check day validity
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => day <= 31,
+        4 | 6 | 9 | 11 => day <= 30,
+        2 => {
+            if is_leap_year(year) {
+                day <= 29
+            } else {
+                day <= 28
+            }
+        }
+        _ => unreachable!("Month value is checked above"),
+    }
+}
+
+#[inline]
+fn is_leap_year(year: u16) -> bool {
+    (year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)
+}
+
+fn is_valid_time(time: &str) -> bool {
+    let bytes = time.as_bytes();
+    let len = bytes.len();
+
+    if len < 8 {
+        // Minimum valid time is "HH:MM:SS"
+        return false;
+    }
+
+    // Check HH:MM:SS format
+    if bytes[2] != b':' || bytes[5] != b':' {
+        return false;
+    }
+
+    // Parse hour (HH)
+    let Some(hour) = parse_two_digits(&bytes[..2]) else {
+        return false;
+    };
+
+    // Parse minute (MM)
+    let Some(minute) = parse_two_digits(&bytes[3..5]) else {
+        return false;
+    };
+
+    // Parse second (SS)
+    let Some(second) = parse_two_digits(&bytes[6..8]) else {
+        return false;
+    };
+
+    if hour > 23 || minute > 59 || second > 59 {
+        return false;
+    }
+
+    let mut i = 8;
+
+    // Check fractional seconds (optional)
+    if i < len && bytes[i] == b'.' {
+        i += 1;
+        let mut has_digit = false;
+        while i < len && bytes[i].is_ascii_digit() {
+            has_digit = true;
+            i += 1;
+        }
+        if !has_digit {
+            return false;
+        }
+    }
+
+    // For local datetime, we've consumed everything
+    i == len
+}
+
+#[inline]
+fn parse_two_digits(bytes: &[u8]) -> Option<u8> {
+    let value = u16::from_ne_bytes([bytes[0], bytes[1]]);
+
+    // Check if both bytes are ASCII digits
+    if value.wrapping_sub(0x3030) & 0xF0F0 == 0 {
+        Some(((value & 0x0F0F).wrapping_mul(2561) >> 8) as u8)
+    } else {
+        None
+    }
+}
+
+#[inline]
+fn parse_four_digits(bytes: &[u8]) -> Option<u16> {
+    let value = u32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+
+    // Check if all bytes are ASCII digits
+    if value.wrapping_sub(0x3030_3030) & 0xF0F0_F0F0 == 0 {
+        let val = (value & 0x0F0F_0F0F).wrapping_mul(2561) >> 8;
+        Some(((val & 0x00FF_00FF).wrapping_mul(6_553_601) >> 16) as u16)
+    } else {
+        None
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::formats::{kz_iin, ru_inn_individual};
@@ -217,6 +361,23 @@ mod tests {
         let inn = ["123", "842101400014", "150105600011"];
         for el in inn {
             assert!(!kz_iin(el));
+        }
+    }
+
+    #[test]
+    fn local_date_time_valid() {
+        let datetime_list = [
+            "2023-10-05T14:30:00",
+            "2000-02-29T23:59:59.999",
+            "1999-12-31T00:00:00",
+            "2024-02-29T12:00:00", // Leap year
+        ];
+
+        for datetime in datetime_list {
+            assert!(
+                super::local_date_time(datetime),
+                "Valid local date-time test failed for: {datetime}"
+            );
         }
     }
 }
