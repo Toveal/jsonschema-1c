@@ -9,7 +9,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 native-1c = { git = "https://github.com/tuplecats/rust-native-1c" }
-jsonschema = { git = "https://github.com/Stranger6667/jsonschema" }
+jsonschema = "0.38.1"
 serde_json = "1.0"
 fluent-uri = "0.3.2"
 
