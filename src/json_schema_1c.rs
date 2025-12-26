@@ -23,7 +23,7 @@ pub struct JsonSchema1C {
     use_custom_formats: bool,
     resolver: RetrieveHandler,
     last_error: Option<Box<dyn Error>>,
-    schema_store: HashMap<Uri<String>, Value>,
+    schema_store: HashMap<jsonschema::Uri<String>, Value>,
     ignore_unknown_formats: bool,
     check_formats: bool,
 }
@@ -54,7 +54,7 @@ impl IComponentBase for JsonSchema1C {
             "Version" | "Версия" => 3,
             "IgnoreUnknownFormats" | "ИгнорироватьНеизвестныеФорматы" => {
                 4
-            },
+            }
             "CheckFormats" | "ПроверятьФорматы" => 5,
             _ => -1,
         }
@@ -123,7 +123,7 @@ impl IComponentBase for JsonSchema1C {
                 } else {
                     return false;
                 }
-            },
+            }
             5 => {
                 if let Some(value) = var_prop_val.as_bool() {
                     self.check_formats = value;
@@ -313,9 +313,9 @@ impl JsonSchema1C {
         let validate_result: Vec<String> = match &self.output_format {
             Some(f) => err_iter
                 .map(|e| {
-                    f.replace("{path}", &e.instance_path.to_string())
-                        .replace("{instance}", &e.instance.to_string())
-                        .replace("{schema_path}", &e.schema_path.to_string())
+                    f.replace("{path}", &e.instance_path().to_string())
+                        .replace("{instance}", &e.instance().to_string())
+                        .replace("{schema_path}", &e.schema_path().to_string())
                         .replace("{error}", &e.to_string())
                 })
                 .collect(),
@@ -344,7 +344,8 @@ impl JsonSchema1C {
         let schema_uri = schema_id
             .as_str()
             .ok_or(JsonSchema1CError::PropertyIdNotString)?;
-        let uri = Uri::parse(schema_uri.to_string()).map_err(JsonSchema1CError::from)?;
+        let uri =
+            jsonschema::Uri::parse(schema_uri.to_string()).map_err(JsonSchema1CError::from)?;
         self.schema_store.insert(uri, schema_value);
 
         Ok(())
@@ -354,7 +355,7 @@ impl JsonSchema1C {
         let param_value = unpack_first_param(params)?
             .as_string()
             .ok_or(JsonSchema1CError::StringConversionError { n_param: 1 })?;
-        let uri = Uri::parse(param_value)?;
+        let uri = jsonschema::Uri::parse(param_value).map_err(JsonSchema1CError::from)?;
         self.schema_store.remove(&uri);
         Ok(())
     }

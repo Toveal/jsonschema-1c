@@ -1,4 +1,4 @@
-use fluent_uri::error::ParseError;
+use fluent_uri::ParseError;
 use std::error::Error;
 
 #[derive(Debug)]
@@ -7,7 +7,7 @@ pub enum JsonSchema1CError {
     SchemeNotInstalled,
     StringConversionError { n_param: u32 },
     PropertyIdNotFound,
-    UriConversionError { msg: ParseError<String> },
+    UriConversionError(ParseError, String),
     PropertyIdNotString,
     JsonReadError { msg: serde_json::Error },
     ParamUnpackError,
@@ -28,7 +28,7 @@ impl std::fmt::Display for JsonSchema1CError {
             JsonSchema1CError::PropertyIdNotFound => {
                 write!(f, "Property '$id' not found in the schema")
             }
-            JsonSchema1CError::UriConversionError { msg } => {
+            JsonSchema1CError::UriConversionError(e, msg) => {
                 write!(f, "Failed to convert id to url: {msg}")
             }
             JsonSchema1CError::PropertyIdNotString => write!(f, "Property '$id' is not a string"),
@@ -49,13 +49,13 @@ impl From<serde_json::Error> for JsonSchema1CError {
 impl<'a> From<jsonschema::ValidationError<'a>> for JsonSchema1CError {
     fn from(value: jsonschema::ValidationError) -> Self {
         JsonSchema1CError::SchemaCompile {
-            msg: format!("{} {}", value.instance_path, value),
+            msg: format!("{} {}", value.instance_path(), value),
         }
     }
 }
 
-impl From<ParseError<String>> for JsonSchema1CError {
-    fn from(value: ParseError<String>) -> Self {
-        JsonSchema1CError::UriConversionError { msg: value }
+impl From<(ParseError, String)> for JsonSchema1CError {
+    fn from(value: (ParseError, String)) -> Self {
+        JsonSchema1CError::UriConversionError(value.0, value.1)
     }
 }
