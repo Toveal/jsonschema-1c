@@ -5,7 +5,6 @@ use std::fmt::{Display, Formatter};
 pub enum ParamType {
     String,
     Bool,
-    Json,
     Uri,
 }
 
@@ -14,7 +13,6 @@ impl Display for ParamType {
         match self {
             ParamType::String => write!(f, "string"),
             ParamType::Bool => write!(f, "bool"),
-            ParamType::Json => write!(f, "json"),
             ParamType::Uri => write!(f, "uri"),
         }
     }
@@ -65,7 +63,7 @@ impl From<serde_json::Error> for JsonSchema1CError {
     }
 }
 
-impl<'a> From<jsonschema::ValidationError<'a>> for JsonSchema1CError {
+impl From<jsonschema::ValidationError<'_>> for JsonSchema1CError {
     fn from(value: jsonschema::ValidationError) -> Self {
         JsonSchema1CError::SchemaCompile {
             msg: format!("{} {}", value.instance_path(), value),

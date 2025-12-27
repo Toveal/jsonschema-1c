@@ -7,7 +7,7 @@ use jsonschema::Validator;
 use serde_json::Value;
 use std::collections::HashMap;
 
-const METHODS: &'static [Method<JsonSchema1C>] = &[
+const METHODS: &[Method<JsonSchema1C>] = &[
     Method::new(
         name!("GetLastError"),
         name!("ПолучитьПоследнююОшибку"),
@@ -52,7 +52,7 @@ const METHODS: &'static [Method<JsonSchema1C>] = &[
     ),
 ];
 
-const PROPS: &'static [Prop<JsonSchema1C>] = &[
+const PROPS: &[Prop<JsonSchema1C>] = &[
     Prop::new(
         name!("Schema"),
         name!("Схема"),
@@ -130,7 +130,7 @@ impl JsonSchema1C {
     }
 
     fn get_version(&mut self, val: &mut ParamMut) -> ComponentResult {
-        Ok(val.set_string(env!("CARGO_PKG_VERSION"))?)
+        val.set_string(env!("CARGO_PKG_VERSION"))
     }
 
     fn get_ignore_unknown_formats(&mut self, val: &mut ParamMut) -> ComponentResult {
@@ -222,7 +222,7 @@ impl JsonSchema1C {
 
     fn get_last_error(&mut self, _params: &mut Params, ret_val: &mut ParamMut) -> ComponentResult {
         match self.last_error.as_ref() {
-            Some(e) => Ok(ret_val.set_string(&e.to_string())?),
+            Some(e) => ret_val.set_string(&e.to_string()),
             None => Ok(ret_val.set_empty()),
         }
     }
@@ -249,10 +249,9 @@ impl JsonSchema1C {
 
 impl JsonSchema1C {
     fn get_schema_self(&self) -> Result<&Validator, JsonSchema1CError> {
-        Ok(self
-            .compiled_schema
+        self.compiled_schema
             .as_ref()
-            .ok_or(JsonSchema1CError::SchemeNotInstalled)?)
+            .ok_or(JsonSchema1CError::SchemeNotInstalled)
     }
 }
 

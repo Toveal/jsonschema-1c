@@ -42,8 +42,8 @@ impl<T: RawAddin> Prop<T> {
     pub const fn new(
         name: &'static CStr1C,
         name_ru: &'static CStr1C,
-        getter: Option<fn(&mut T, &mut ParamMut) -> Result<(), JsonSchema1CError>>,
-        setter: Option<fn(&mut T, &Param) -> Result<(), JsonSchema1CError>>,
+        getter: Option<fn(&mut T, &mut ParamMut) -> ComponentResult>,
+        setter: Option<fn(&mut T, &Param) -> ComponentResult>,
     ) -> Self {
         Self {
             name,
@@ -62,27 +62,24 @@ impl<'a> Param<'a> {
     }
 
     pub fn get_string(&self) -> Result<String, JsonSchema1CError> {
-        Ok(self
-            .0
+        self.0
             .get_string()
-            .map_err(|_| JsonSchema1CError::PropertyConvertType(ParamType::String))?)
+            .map_err(|_| JsonSchema1CError::PropertyConvertType(ParamType::String))
     }
 
     pub fn get_bool(&self) -> Result<bool, JsonSchema1CError> {
-        Ok(self
-            .0
+        self.0
             .get_bool()
-            .map_err(|_| JsonSchema1CError::PropertyConvertType(ParamType::Bool))?)
+            .map_err(|_| JsonSchema1CError::PropertyConvertType(ParamType::Bool))
     }
 
     pub(self) fn i_get_string(&self, num: usize) -> Result<String, JsonSchema1CError> {
-        Ok(self
-            .0
+        self.0
             .get_string()
             .map_err(|_| JsonSchema1CError::ConvertParamType {
                 p_type: ParamType::String,
                 num,
-            })?)
+            })
     }
 }
 
@@ -93,19 +90,10 @@ impl<'a, 'b> ParamMut<'a, 'b> {
         Self(val)
     }
 
-    pub fn get_string(&self) -> Result<String, JsonSchema1CError> {
-        Param(self.0).get_string()
-    }
-
     pub fn set_string(&mut self, val: impl AsRef<str>) -> Result<(), JsonSchema1CError> {
-        Ok(self
-            .0
+        self.0
             .set_str1c(val.as_ref())
-            .map_err(|_| JsonSchema1CError::OutOfMemory)?)
-    }
-
-    pub fn get_bool(&self) -> Result<bool, JsonSchema1CError> {
-        Param(self.0).get_bool()
+            .map_err(|_| JsonSchema1CError::OutOfMemory)
     }
 
     pub fn set_bool(&mut self, val: bool) {
@@ -129,13 +117,6 @@ impl<'a, 'b> Params<'a, 'b> {
             return Err(JsonSchema1CError::ParamNotFound(num));
         };
         Param(param).i_get_string(num)
-    }
-
-    pub fn get(&'b self, num: usize) -> Result<Param<'b>, JsonSchema1CError> {
-        let Some(param) = self.0.get(num) else {
-            return Err(JsonSchema1CError::ParamNotFound(num));
-        };
-        Ok(Param(param))
     }
 
     pub fn get_mut(&mut self, num: usize) -> Result<ParamMut<'_, 'b>, JsonSchema1CError> {
