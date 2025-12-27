@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::error::Error;
 
-use fluent_uri::Uri;
 use native_1c::component::IComponentBase;
 use native_1c::native_macro::native_object;
 use native_1c::types::Variant;
