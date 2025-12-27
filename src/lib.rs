@@ -6,47 +6,38 @@ mod json_schema_1c;
 mod retrieve_handler;
 mod tools;
 
-use native_1c::component::AppCapabilities;
-use native_1c::widestring::{U16CStr, U16CString};
-use native_1c::OnceCell;
+use addin1c::{create_component, destroy_component, name, AttachType};
+use std::ffi::{c_int, c_void};
 use std::os::raw::c_long;
+use std::sync::atomic::{AtomicI32, Ordering};
 
-static CLASS_NAMES: OnceCell<Vec<u16>> = OnceCell::new();
+static PLATFORM_CAPABILITIES: AtomicI32 = AtomicI32::new(-1);
 
 #[no_mangle]
-unsafe extern "C" fn GetClassObject(wide_name: *const u16, component: *mut *const u8) -> c_long {
-    let Ok(name) = U16CStr::from_ptr_str(wide_name).to_string() else {
-        return 0;
-    };
-    *component = match name.as_str() {
-        "JsonSchema1C" => {
-            let addin = json_schema_1c::JsonSchema1C::new();
-            Box::into_raw(Box::new(addin)) as *const u8
-        }
-
-        _ => return 0,
-    };
-    component as c_long
+unsafe extern "C" fn GetClassObject(name: *const u16, component: *mut *mut c_void) -> c_long {
+    match unsafe { *name } as u8 {
+        b'1' => unsafe { create_component(component, json_schema_1c::JsonSchema1C::default()) },
+        _ => 0,
+    }
 }
 
 #[no_mangle]
-unsafe extern "C" fn DestroyObject(_component: *mut *const u8) -> c_long {
-    0
+unsafe extern "C" fn DestroyObject(component: *mut *mut c_void) -> c_long {
+    destroy_component(component)
 }
 
 #[no_mangle]
 unsafe extern "C" fn GetClassNames() -> *const u16 {
-    CLASS_NAMES
-        .get_or_init(|| {
-            U16CString::from_str("JsonSchema1C")
-                .unwrap()
-                .as_slice_with_nul()
-                .to_vec()
-        })
-        .as_ptr()
+    name!("1").as_ptr()
 }
 
 #[no_mangle]
-unsafe extern "C" fn SetPlatformCapabilities(capabilities: AppCapabilities) -> AppCapabilities {
-    capabilities
+unsafe extern "C" fn SetPlatformCapabilities(capabilities: c_int) -> c_int {
+    PLATFORM_CAPABILITIES.store(capabilities, Ordering::Relaxed);
+    3
+}
+
+#[no_mangle]
+unsafe extern "C" fn GetAttachType() -> AttachType {
+    AttachType::Any
 }

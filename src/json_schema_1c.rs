@@ -1,223 +1,389 @@
-use std::collections::HashMap;
-use std::error::Error;
-
-use fluent_uri::Uri;
-use native_1c::component::IComponentBase;
-use native_1c::native_macro::native_object;
-use native_1c::types::Variant;
-use serde_json::Value;
-
-use crate::errors::JsonSchema1CError;
+use crate::errors::{JsonSchema1CError, ParamType};
 use crate::formats::FORMATS;
 use crate::retrieve_handler::RetrieveHandler;
-use crate::tools::{unpack_first_param, unpack_two_params};
+use crate::tools::{ComponentResult, Method, MethodVariant, Param, ParamMut, Params, Prop};
+use addin1c::{name, CStr1C, Connection, RawAddin, Variant};
+use jsonschema::Validator;
+use serde_json::Value;
+use std::collections::HashMap;
 
-type Params<'a> = Option<&'a mut [Variant]>;
+const METHODS: &[Method<JsonSchema1C>] = &[
+    Method::new(
+        name!("GetLastError"),
+        name!("ПолучитьПоследнююОшибку"),
+        0,
+        MethodVariant::Func(JsonSchema1C::get_last_error),
+    ),
+    Method::new(
+        name!("IsValid"),
+        name!("Действителен"),
+        1,
+        MethodVariant::Func(JsonSchema1C::is_valid),
+    ),
+    Method::new(
+        name!("Validate"),
+        name!("Проверить"),
+        2,
+        MethodVariant::Func(JsonSchema1C::validate),
+    ),
+    Method::new(
+        name!("AddScheme"),
+        name!("ДобавитьСхему"),
+        1,
+        MethodVariant::Proc(JsonSchema1C::add_scheme),
+    ),
+    Method::new(
+        name!("DeleteScheme"),
+        name!("УдалитьСхему"),
+        1,
+        MethodVariant::Proc(JsonSchema1C::delete_scheme),
+    ),
+    Method::new(
+        name!("DeleteAllSchemes"),
+        name!("УдалитьВсеСхемы"),
+        0,
+        MethodVariant::Proc(JsonSchema1C::delete_all_schemes),
+    ),
+    Method::new(
+        name!("SetMainScheme"),
+        name!("УстановитьОсновнуюСхему"),
+        1,
+        MethodVariant::Proc(JsonSchema1C::set_main_schema),
+    ),
+];
 
-#[native_object]
-#[repr(C)]
+const PROPS: &[Prop<JsonSchema1C>] = &[
+    Prop::new(
+        name!("Schema"),
+        name!("Схема"),
+        Some(JsonSchema1C::get_schema),
+        None,
+    ),
+    Prop::new(
+        name!("Format"),
+        name!("Формат"),
+        Some(JsonSchema1C::get_format),
+        Some(JsonSchema1C::set_format),
+    ),
+    Prop::new(
+        name!("UseCustomFormats"),
+        name!("ИспользоватьДопФорматы"),
+        Some(JsonSchema1C::get_use_custom_formats),
+        Some(JsonSchema1C::set_use_custom_formats),
+    ),
+    Prop::new(
+        name!("Version"),
+        name!("Версия"),
+        Some(JsonSchema1C::get_version),
+        None,
+    ),
+    Prop::new(
+        name!("IgnoreUnknownFormats"),
+        name!("ИгнорироватьНеизвестныеФорматы"),
+        Some(JsonSchema1C::get_ignore_unknown_formats),
+        Some(JsonSchema1C::set_ignore_unknown_formats),
+    ),
+    Prop::new(
+        name!("CheckFormats"),
+        name!("ПроверятьФорматы"),
+        Some(JsonSchema1C::get_check_formats),
+        Some(JsonSchema1C::set_check_formats),
+    ),
+];
+
+#[derive(Default)]
 pub struct JsonSchema1C {
     schema: Option<String>,
-    compiled_schema: Option<jsonschema::Validator>,
+    compiled_schema: Option<Validator>,
     output_format: Option<String>,
     use_custom_formats: bool,
-    resolver: RetrieveHandler,
-    last_error: Option<Box<dyn Error>>,
-    schema_store: HashMap<Uri<String>, Value>,
+    last_error: Option<JsonSchema1CError>,
+    schema_store: HashMap<jsonschema::Uri<String>, Value>,
     ignore_unknown_formats: bool,
     check_formats: bool,
 }
 
-impl IComponentBase for JsonSchema1C {
-    fn init(&mut self) -> bool {
+// PROPS
+impl JsonSchema1C {
+    fn get_schema(&mut self, val: &mut ParamMut) -> ComponentResult {
+        val.set_string(self.schema.as_ref().unwrap_or(&String::new()))?;
+        Ok(())
+    }
+
+    fn get_format(&mut self, val: &mut ParamMut) -> ComponentResult {
+        val.set_string(self.output_format.as_ref().unwrap_or(&String::new()))?;
+        Ok(())
+    }
+
+    fn set_format(&mut self, val: &Param) -> ComponentResult {
+        self.output_format = Some(val.get_string()?);
+        Ok(())
+    }
+
+    fn get_use_custom_formats(&mut self, val: &mut ParamMut) -> ComponentResult {
+        Ok(val.set_bool(self.use_custom_formats))
+    }
+
+    fn set_use_custom_formats(&mut self, val: &Param) -> ComponentResult {
+        self.use_custom_formats = val.get_bool()?;
+        Ok(())
+    }
+
+    fn get_version(&mut self, val: &mut ParamMut) -> ComponentResult {
+        val.set_string(env!("CARGO_PKG_VERSION"))
+    }
+
+    fn get_ignore_unknown_formats(&mut self, val: &mut ParamMut) -> ComponentResult {
+        Ok(val.set_bool(self.ignore_unknown_formats))
+    }
+
+    fn set_ignore_unknown_formats(&mut self, val: &Param) -> ComponentResult {
+        self.ignore_unknown_formats = val.get_bool()?;
+        Ok(())
+    }
+
+    fn get_check_formats(&mut self, val: &mut ParamMut) -> ComponentResult {
+        Ok(val.set_bool(self.check_formats))
+    }
+
+    fn set_check_formats(&mut self, val: &Param) -> ComponentResult {
+        self.check_formats = val.get_bool()?;
+        Ok(())
+    }
+}
+
+// METHODS
+impl JsonSchema1C {
+    fn is_valid(&mut self, params: &mut Params, ret_val: &mut ParamMut) -> ComponentResult {
+        let schema = self.get_schema_self()?;
+        let json = params.get_string(0)?;
+        let check_value: Value = serde_json::from_str(&json)?;
+        Ok(ret_val.set_bool(schema.is_valid(&check_value)))
+    }
+
+    fn validate(&mut self, params: &mut Params, ret_val: &mut ParamMut) -> ComponentResult {
+        let schema = self.get_schema_self()?;
+        let json = params.get_string(0)?;
+        let mut result = params.get_mut(1)?;
+        let check_value: Value = serde_json::from_str(&json)?;
+        let err_iter = schema.iter_errors(&check_value);
+        let validate_result: Vec<String> = match &self.output_format {
+            Some(f) => err_iter
+                .map(|e| {
+                    f.replace("{path}", &e.instance_path().to_string())
+                        .replace("{instance}", &e.instance().to_string())
+                        .replace("{schema_path}", &e.schema_path().to_string())
+                        .replace("{error}", &e.to_string())
+                })
+                .collect(),
+            None => err_iter.map(|e| e.to_string()).collect(),
+        };
+
+        let validate_result_string = serde_json::to_string(&validate_result)?;
+        result.set_string(validate_result_string)?;
+        Ok(ret_val.set_bool(validate_result.is_empty()))
+    }
+
+    fn add_scheme(&mut self, params: &mut Params) -> ComponentResult {
+        let json = params.get_string(0)?;
+        let schema_value: Value = serde_json::from_str(&json)?;
+        let schema_id = schema_value
+            .get("$id")
+            .ok_or(JsonSchema1CError::PropertyIdNotFound)?;
+        let schema_uri = schema_id
+            .as_str()
+            .ok_or(JsonSchema1CError::PropertyIdNotString)?;
+        let uri = jsonschema::Uri::parse(schema_uri.to_string()).map_err(|_| {
+            JsonSchema1CError::ConvertParamType {
+                num: 0,
+                p_type: ParamType::Uri,
+            }
+        })?;
+        self.schema_store.insert(uri, schema_value);
+        Ok(())
+    }
+
+    fn delete_scheme(&mut self, params: &mut Params) -> ComponentResult {
+        let input = params.get_string(0)?;
+        let uri = jsonschema::Uri::parse(input.to_string()).map_err(|_| {
+            JsonSchema1CError::ConvertParamType {
+                num: 0,
+                p_type: ParamType::Uri,
+            }
+        })?;
+        self.schema_store.remove(&uri);
+        Ok(())
+    }
+
+    fn delete_all_schemes(&mut self, _params: &mut Params) -> ComponentResult {
+        self.schema_store.clear();
+        Ok(())
+    }
+
+    fn get_last_error(&mut self, _params: &mut Params, ret_val: &mut ParamMut) -> ComponentResult {
+        match self.last_error.as_ref() {
+            Some(e) => ret_val.set_string(&e.to_string()),
+            None => Ok(ret_val.set_empty()),
+        }
+    }
+
+    fn set_main_schema(&mut self, params: &mut Params) -> ComponentResult {
+        let json = params.get_string(0)?;
+        let schema_value: Value = serde_json::from_str(&json)?;
+        let mut schema_options = jsonschema::options()
+            .should_ignore_unknown_formats(self.ignore_unknown_formats)
+            .should_validate_formats(self.check_formats);
+        if self.use_custom_formats {
+            for (name, function) in FORMATS {
+                schema_options = schema_options.with_format(name, function);
+            }
+        }
+        let schema = schema_options
+            .with_retriever(RetrieveHandler::new(self.schema_store.clone()))
+            .build(&schema_value)?;
+        self.compiled_schema = Some(schema);
+        self.schema = Some(json);
+        Ok(())
+    }
+}
+
+impl JsonSchema1C {
+    fn get_schema_self(&self) -> Result<&Validator, JsonSchema1CError> {
+        self.compiled_schema
+            .as_ref()
+            .ok_or(JsonSchema1CError::SchemeNotInstalled)
+    }
+}
+
+impl RawAddin for JsonSchema1C {
+    fn init(&mut self, _interface: &'static Connection) -> bool {
         self.use_custom_formats = true;
         self.ignore_unknown_formats = true;
         self.check_formats = true;
         true
     }
 
-    fn get_info(&self) -> i32 {
+    fn get_info(&mut self) -> u16 {
         2000
     }
 
-    fn done(&mut self) {}
-
-    fn get_n_props(&self) -> i32 {
-        6
+    fn register_extension_as(&mut self) -> &CStr1C {
+        name!("JsonSchema1C")
     }
 
-    fn find_prop(&self, prop_name: &str) -> i32 {
-        match prop_name {
-            "Schema" | "Схема" => 0,
-            "Format" | "Формат" => 1,
-            "UseCustomFormats" | "ИспользоватьДопФорматы" => 2,
-            "Version" | "Версия" => 3,
-            "IgnoreUnknownFormats" | "ИгнорироватьНеизвестныеФорматы" => {
-                4
-            },
-            "CheckFormats" | "ПроверятьФорматы" => 5,
-            _ => -1,
-        }
+    fn get_n_props(&mut self) -> usize {
+        PROPS.len()
     }
 
-    fn get_prop_name(&self, prop_num: i32, prop_alias: i32) -> &str {
-        match (prop_num, prop_alias) {
-            (0, 0) => "Schema",
-            (0, 1) => "Схема",
-            (1, 0) => "Format",
-            (1, 1) => "Формат",
-            (2, 0) => "UseCustomFormats",
-            (2, 1) => "ИспользоватьДопФорматы",
-            (3, 0) => "Version",
-            (3, 1) => "Версия",
-            (4, 0) => "IgnoreUnknownFormats",
-            (4, 1) => "ИгнорироватьНеизвестныеФорматы",
-            (5, 0) => "CheckFormats",
-            (5, 1) => "ПроверятьФорматы",
-            _ => unreachable!(),
-        }
+    fn find_prop(&mut self, name: &CStr1C) -> Option<usize> {
+        PROPS
+            .iter()
+            .position(|p| p.name == name || p.name_ru == name)
     }
 
-    fn get_prop_val(&self, prop_num: i32, var_prop_val: &mut Variant) -> bool {
-        match prop_num {
-            0 => {
-                *var_prop_val =
-                    Variant::utf16_string(self, self.schema.as_deref().unwrap_or_default());
-            }
-            1 => {
-                *var_prop_val =
-                    Variant::utf16_string(self, self.output_format.as_deref().unwrap_or_default());
-            }
-            2 => *var_prop_val = Variant::from(self.use_custom_formats),
-            3 => *var_prop_val = Variant::utf16_string(self, std::env!("CARGO_PKG_VERSION")),
-            4 => *var_prop_val = Variant::from(self.ignore_unknown_formats),
-            5 => *var_prop_val = Variant::from(self.check_formats),
-            _ => return false,
-        }
-        true
+    fn get_prop_name(&mut self, num: usize, alias: usize) -> Option<&'static CStr1C> {
+        PROPS
+            .get(num)
+            .map(|p| if alias == 0 { p.name } else { p.name_ru })
     }
 
-    fn set_prop_val(&mut self, prop_num: i32, var_prop_val: &Variant) -> bool {
-        match prop_num {
-            1 => {
-                if let Some(value) = var_prop_val.as_string() {
-                    if value.is_empty() {
-                        self.output_format = None;
-                    } else {
-                        self.output_format = Some(value);
-                    }
-                } else {
-                    return false;
-                };
-            }
-            2 => {
-                if let Some(value) = var_prop_val.as_bool() {
-                    self.use_custom_formats = value;
-                } else {
-                    return false;
-                };
-            }
-            4 => {
-                if let Some(value) = var_prop_val.as_bool() {
-                    self.ignore_unknown_formats = value;
-                } else {
-                    return false;
-                }
-            },
-            5 => {
-                if let Some(value) = var_prop_val.as_bool() {
-                    self.check_formats = value;
-                } else {
-                    return false;
-                }
-            }
-            _ => return false,
-        }
-
-        true
-    }
-
-    fn is_prop_readable(&self, _prop_num: i32) -> bool {
-        true
-    }
-
-    fn is_prop_writeable(&self, prop_num: i32) -> bool {
-        !matches!(prop_num, 0 | 3)
-    }
-
-    fn get_n_methods(&self) -> i32 {
-        7
-    }
-
-    fn find_method(&self, method_name: &str) -> i32 {
-        match method_name {
-            "IsValid" | "Действителен" => 0,
-            "Validate" | "Проверить" => 1,
-            "AddScheme" | "ДобавитьСхему" => 2,
-            "DeleteScheme" | "УдалитьСхему" => 3,
-            "DeleteAllSchemes" | "УдалитьВсеСхемы" => 4,
-            "GetLastError" | "ПолучитьПоследнююОшибку" => 5,
-            "SetMainScheme" | "УстановитьОсновнуюСхему" => 6,
-            _ => -1,
-        }
-    }
-
-    fn get_method_name(&self, method_num: i32, method_alias: i32) -> &str {
-        match (method_num, method_alias) {
-            (0, 0) => "IsValid",
-            (0, 1) => "Действителен",
-            (1, 0) => "Validate",
-            (1, 1) => "Проверить",
-            (2, 0) => "AddScheme",
-            (2, 1) => "ДобавитьСхему",
-            (3, 0) => "DeleteScheme",
-            (3, 1) => "УдалитьСхему",
-            (4, 0) => "DeleteAllSchemes",
-            (4, 1) => "УдалитьВсеСхемы",
-            (5, 0) => "GetLastError",
-            (5, 1) => "ПолучитьПоследнююОшибку",
-            (6, 0) => "SetMainScheme",
-            (6, 1) => "УстановитьОсновнуюСхему",
-            _ => unreachable!(),
-        }
-    }
-
-    fn get_n_params(&self, method_num: i32) -> i32 {
-        match method_num {
-            0 | 2 | 3 | 6 => 1,
-            1 => 2,
-            _ => 0,
-        }
-    }
-
-    fn get_param_def_value(
-        &self,
-        _method_num: i32,
-        _param_num: i32,
-        _var_param_def_value: &mut Variant,
-    ) -> bool {
-        true
-    }
-
-    fn has_ret_val(&self, method_num: i32) -> bool {
-        matches!(method_num, 0 | 1 | 5)
-    }
-
-    fn call_as_proc(&mut self, method_num: i32, params: Option<&mut [Variant]>) -> bool {
-        let call_result = match method_num {
-            2 => self.add_additional_scheme(params),
-            3 => self.remove_additional_scheme(params),
-            4 => {
-                self.clear_additional_schemes();
-                Ok(())
-            }
-            6 => self.set_main_schema(params),
-            _ => unreachable!(),
+    fn get_prop_val(&mut self, num: usize, val: &mut Variant) -> bool {
+        let Some(prop) = PROPS.get(num) else {
+            return false;
         };
-        match call_result {
-            Ok(()) => true,
+
+        let Some(getter) = prop.getter else {
+            return false;
+        };
+
+        self.last_error = None;
+
+        let mut prop = ParamMut::new(val);
+        match getter(self, &mut prop) {
+            Ok(_) => true,
             Err(e) => {
-                self.add_error(e);
+                self.last_error = Some(e);
+                false
+            }
+        }
+    }
+
+    fn set_prop_val(&mut self, num: usize, val: &Variant) -> bool {
+        let Some(prop) = PROPS.get(num) else {
+            return false;
+        };
+
+        let Some(setter) = prop.setter else {
+            return false;
+        };
+
+        self.last_error = None;
+
+        let prop = Param::new(val);
+        match setter(self, &prop) {
+            Ok(_) => true,
+            Err(e) => {
+                self.last_error = Some(e);
+                false
+            }
+        }
+    }
+
+    fn is_prop_readable(&mut self, num: usize) -> bool {
+        PROPS.get(num).is_some_and(|p| p.getter.is_some())
+    }
+
+    fn is_prop_writable(&mut self, num: usize) -> bool {
+        PROPS.get(num).is_some_and(|p| p.setter.is_some())
+    }
+
+    fn get_n_methods(&mut self) -> usize {
+        METHODS.len()
+    }
+
+    fn find_method(&mut self, name: &CStr1C) -> Option<usize> {
+        METHODS
+            .iter()
+            .position(|m| m.name == name || m.name_ru == name)
+    }
+
+    fn get_method_name(&mut self, num: usize, alias: usize) -> Option<&'static CStr1C> {
+        METHODS
+            .get(num)
+            .map(|m| if alias == 0 { m.name } else { m.name_ru })
+    }
+
+    fn get_n_params(&mut self, num: usize) -> usize {
+        METHODS.get(num).map(|m| m.params_count).unwrap_or(0)
+    }
+
+    fn has_ret_val(&mut self, method_num: usize) -> bool {
+        METHODS
+            .get(method_num)
+            .map(|m| match m.method {
+                MethodVariant::Func(_) => true,
+                _ => false,
+            })
+            .unwrap_or(false)
+    }
+
+    fn call_as_proc(&mut self, method_num: usize, params: &mut [Variant]) -> bool {
+        let Some(method) = METHODS.get(method_num) else {
+            return false;
+        };
+
+        let MethodVariant::Proc(proc) = method.method else {
+            return false;
+        };
+
+        let mut props = Params::new(params);
+        match proc(self, &mut props) {
+            Ok(_) => {
+                self.last_error = None;
+                true
+            }
+            Err(e) => {
+                self.last_error = Some(e);
                 false
             }
         }
@@ -225,149 +391,29 @@ impl IComponentBase for JsonSchema1C {
 
     fn call_as_func(
         &mut self,
-        method_num: i32,
-        ret_vals: &mut Variant,
-        params: Option<&mut [Variant]>,
+        method_num: usize,
+        params: &mut [Variant],
+        val: &mut Variant,
     ) -> bool {
-        let call_result = match method_num {
-            0 => self.is_valid(params),
-            1 => self.validate(params),
-            5 => Ok(self.get_last_error()),
-            _ => unreachable!(),
+        let Some(method) = METHODS.get(method_num) else {
+            return false;
         };
 
-        match call_result {
-            Ok(v) => {
-                *ret_vals = v;
+        let MethodVariant::Func(proc) = method.method else {
+            return false;
+        };
+
+        let mut props = Params::new(params);
+        let mut ret_val = ParamMut::new(val);
+        match proc(self, &mut props, &mut ret_val) {
+            Ok(_) => {
+                self.last_error = None;
                 true
             }
             Err(e) => {
-                self.add_error(e);
+                self.last_error = Some(e);
                 false
             }
-        }
-    }
-
-    fn set_locale(&mut self, _loc: &str) {}
-}
-
-impl JsonSchema1C {
-    fn set_main_schema(&mut self, params: Params) -> Result<(), Box<dyn Error>> {
-        let param_value = unpack_first_param(params)?
-            .as_string()
-            .ok_or(JsonSchema1CError::StringConversionError { n_param: 1 })?;
-
-        let schema_value: serde_json::Value =
-            serde_json::from_str(&param_value).map_err(JsonSchema1CError::from)?;
-
-        let mut schema_options = jsonschema::options()
-            .should_ignore_unknown_formats(self.ignore_unknown_formats)
-            .should_validate_formats(self.check_formats);
-
-        if self.use_custom_formats {
-            for (name, function) in FORMATS {
-                schema_options = schema_options.with_format(name, function);
-            }
-        }
-
-        let schema = schema_options
-            .with_retriever(RetrieveHandler::new(self.schema_store.clone()))
-            .build(&schema_value)
-            .map_err(JsonSchema1CError::from)?;
-        self.compiled_schema = Some(schema);
-        self.schema = Some(param_value);
-        Ok(())
-    }
-
-    fn add_error(&mut self, error: Box<dyn Error>) {
-        self.last_error = Some(error);
-    }
-
-    fn is_valid(&self, params: Params) -> Result<Variant, Box<dyn Error>> {
-        if let Some(schema) = &self.compiled_schema {
-            let json = unpack_first_param(params)?
-                .as_string()
-                .ok_or(JsonSchema1CError::StringConversionError { n_param: 1 })?;
-            let check_value: serde_json::Value =
-                serde_json::from_str(&json).map_err(JsonSchema1CError::from)?;
-            Ok(Variant::from(schema.is_valid(&check_value)))
-        } else {
-            Err(JsonSchema1CError::SchemeNotInstalled.into())
-        }
-    }
-
-    fn validate(&self, params: Params) -> Result<Variant, Box<dyn Error>> {
-        let Some(schema) = &self.compiled_schema else {
-            return Err(JsonSchema1CError::SchemeNotInstalled.into());
-        };
-
-        let [p1, p2] = unpack_two_params(params)?;
-        let json = p1
-            .as_string()
-            .ok_or(JsonSchema1CError::StringConversionError { n_param: 1 })?;
-
-        let check_value: serde_json::Value =
-            serde_json::from_str(&json).map_err(JsonSchema1CError::from)?;
-
-        let err_iter = schema.iter_errors(&check_value);
-        let validate_result: Vec<String> = match &self.output_format {
-            Some(f) => err_iter
-                .map(|e| {
-                    f.replace("{path}", &e.instance_path.to_string())
-                        .replace("{instance}", &e.instance.to_string())
-                        .replace("{schema_path}", &e.schema_path.to_string())
-                        .replace("{error}", &e.to_string())
-                })
-                .collect(),
-            None => err_iter.map(|e| e.to_string()).collect(),
-        };
-
-        if validate_result.is_empty() {
-            Ok(Variant::from(true))
-        } else {
-            let result_json = serde_json::to_string(&validate_result)?;
-            *p2 = Variant::utf16_string(self, &result_json);
-            Ok(Variant::from(false))
-        }
-    }
-
-    fn add_additional_scheme(&mut self, params: Params) -> Result<(), Box<dyn Error>> {
-        let json = unpack_first_param(params)?
-            .as_string()
-            .ok_or(JsonSchema1CError::StringConversionError { n_param: 1 })?;
-
-        let schema_value: Value = serde_json::from_str(&json).map_err(JsonSchema1CError::from)?;
-        let schema_id = schema_value
-            .get("$id")
-            .ok_or(JsonSchema1CError::PropertyIdNotFound)?;
-
-        let schema_uri = schema_id
-            .as_str()
-            .ok_or(JsonSchema1CError::PropertyIdNotString)?;
-        let uri = Uri::parse(schema_uri.to_string()).map_err(JsonSchema1CError::from)?;
-        self.schema_store.insert(uri, schema_value);
-
-        Ok(())
-    }
-
-    fn remove_additional_scheme(&mut self, params: Params) -> Result<(), Box<dyn Error>> {
-        let param_value = unpack_first_param(params)?
-            .as_string()
-            .ok_or(JsonSchema1CError::StringConversionError { n_param: 1 })?;
-        let uri = Uri::parse(param_value)?;
-        self.schema_store.remove(&uri);
-        Ok(())
-    }
-
-    fn clear_additional_schemes(&mut self) {
-        self.schema_store.clear();
-    }
-
-    fn get_last_error(&self) -> Variant {
-        if let Some(e) = self.last_error.as_ref() {
-            Variant::utf16_string(self, &e.to_string())
-        } else {
-            Variant::empty()
         }
     }
 }

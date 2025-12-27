@@ -1,40 +1,57 @@
-use fluent_uri::error::ParseError;
 use std::error::Error;
+use std::fmt::{Display, Formatter};
+
+#[derive(Debug)]
+pub enum ParamType {
+    String,
+    Bool,
+    Uri,
+}
+
+impl Display for ParamType {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ParamType::String => write!(f, "string"),
+            ParamType::Bool => write!(f, "bool"),
+            ParamType::Uri => write!(f, "uri"),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum JsonSchema1CError {
     SchemaCompile { msg: String },
     SchemeNotInstalled,
-    StringConversionError { n_param: u32 },
     PropertyIdNotFound,
-    UriConversionError { msg: ParseError<String> },
     PropertyIdNotString,
     JsonReadError { msg: serde_json::Error },
-    ParamUnpackError,
+    OutOfMemory,
+    ParamNotFound(usize),
+    ConvertParamType { num: usize, p_type: ParamType },
+    PropertyConvertType(ParamType),
 }
 
 impl Error for JsonSchema1CError {}
 
-impl std::fmt::Display for JsonSchema1CError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl Display for JsonSchema1CError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             JsonSchema1CError::SchemaCompile { msg } => {
                 write!(f, "Scheme compilation error: {msg}")
             }
             JsonSchema1CError::SchemeNotInstalled => write!(f, "Scheme not installed"),
-            JsonSchema1CError::StringConversionError { n_param } => {
-                write!(f, "Error converting parameter {n_param} to a string")
-            }
             JsonSchema1CError::PropertyIdNotFound => {
                 write!(f, "Property '$id' not found in the schema")
             }
-            JsonSchema1CError::UriConversionError { msg } => {
-                write!(f, "Failed to convert id to url: {msg}")
-            }
             JsonSchema1CError::PropertyIdNotString => write!(f, "Property '$id' is not a string"),
             JsonSchema1CError::JsonReadError { msg } => write!(f, "JSON reading error: {msg}"),
-            JsonSchema1CError::ParamUnpackError => {
-                write!(f, "Internal component error. Expected parameter not found")
+            JsonSchema1CError::OutOfMemory => write!(f, "Out of memory"),
+            JsonSchema1CError::ConvertParamType { num, p_type } => {
+                write!(f, "Failed to extract parameter {num} as '{p_type}'")
+            }
+            JsonSchema1CError::ParamNotFound(num) => write!(f, "Param '{}' not found", num),
+            JsonSchema1CError::PropertyConvertType(t) => {
+                write!(f, "Failed to extract property as '{t}'")
             }
         }
     }
@@ -46,16 +63,10 @@ impl From<serde_json::Error> for JsonSchema1CError {
     }
 }
 
-impl<'a> From<jsonschema::ValidationError<'a>> for JsonSchema1CError {
+impl From<jsonschema::ValidationError<'_>> for JsonSchema1CError {
     fn from(value: jsonschema::ValidationError) -> Self {
         JsonSchema1CError::SchemaCompile {
-            msg: format!("{} {}", value.instance_path, value),
+            msg: format!("{} {}", value.instance_path(), value),
         }
-    }
-}
-
-impl From<ParseError<String>> for JsonSchema1CError {
-    fn from(value: ParseError<String>) -> Self {
-        JsonSchema1CError::UriConversionError { msg: value }
     }
 }
