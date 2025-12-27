@@ -9,15 +9,15 @@ pub struct RetrieveHandler {
 }
 
 impl RetrieveHandler {
-    pub fn new(schemas: HashMap<Uri<String>, Value>) -> Self {
-        Self { store: schemas }
+    pub fn new(store: HashMap<Uri<String>, Value>) -> RetrieveHandler {
+        Self { store }
     }
 }
 
 impl Retrieve for RetrieveHandler {
     fn retrieve(
         &self,
-        uri: &jsonschema::Uri<std::string::String>,
+        uri: &Uri<String>,
     ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
         match self.store.get(uri.as_str()) {
             Some(v) => Ok(v.clone()),
