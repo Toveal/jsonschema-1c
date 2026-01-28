@@ -1,4 +1,4 @@
-use crate::errors::{JsonSchema1CError, ParamType};
+use crate::errors::JsonSchema1CError;
 use crate::formats::FORMATS;
 use crate::retrieve_handler::RetrieveHandler;
 use crate::tools::{ComponentResult, Method, MethodVariant, Param, ParamMut, Params, Prop};
@@ -8,86 +8,83 @@ use serde_json::Value;
 use std::collections::HashMap;
 
 const METHODS: &[Method<JsonSchema1C>] = &[
-    Method::new(
+    Method::func(
         name!("GetLastError"),
-        name!("ПолучитьПоследнююОшибку"),
+        name!("ПолучитьОшибку"),
         0,
-        MethodVariant::Func(JsonSchema1C::get_last_error),
-    ),
-    Method::new(
+        JsonSchema1C::get_last_error,
+    )
+    .save_error(),
+    Method::func(
         name!("IsValid"),
         name!("Действителен"),
         1,
-        MethodVariant::Func(JsonSchema1C::is_valid),
+        JsonSchema1C::check_valid,
     ),
-    Method::new(
+    Method::func(
         name!("Validate"),
         name!("Проверить"),
         2,
-        MethodVariant::Func(JsonSchema1C::validate),
+        JsonSchema1C::validate,
     ),
-    Method::new(
+    Method::proc(
         name!("AddScheme"),
         name!("ДобавитьСхему"),
         1,
-        MethodVariant::Proc(JsonSchema1C::add_scheme),
+        JsonSchema1C::add_scheme,
     ),
-    Method::new(
+    Method::proc(
         name!("DeleteScheme"),
         name!("УдалитьСхему"),
         1,
-        MethodVariant::Proc(JsonSchema1C::delete_scheme),
+        JsonSchema1C::delete_scheme,
     ),
-    Method::new(
+    Method::proc(
         name!("DeleteAllSchemes"),
         name!("УдалитьВсеСхемы"),
         0,
-        MethodVariant::Proc(JsonSchema1C::delete_all_schemes),
+        JsonSchema1C::delete_all_schemes,
     ),
-    Method::new(
+    Method::proc(
         name!("SetMainScheme"),
         name!("УстановитьОсновнуюСхему"),
         1,
-        MethodVariant::Proc(JsonSchema1C::set_main_schema),
+        JsonSchema1C::set_main_schema,
+    ),
+    Method::func(
+        name!("GetValidationError"),
+        name!("ПолучитьОшибкиВалидации"),
+        0,
+        JsonSchema1C::get_validation_errors,
     ),
 ];
 
 const PROPS: &[Prop<JsonSchema1C>] = &[
-    Prop::new(
-        name!("Schema"),
-        name!("Схема"),
-        Some(JsonSchema1C::get_schema),
-        None,
-    ),
-    Prop::new(
+    Prop::read_only(name!("Schema"), name!("Схема"), JsonSchema1C::get_schema),
+    Prop::read_write(
         name!("Format"),
         name!("Формат"),
-        Some(JsonSchema1C::get_format),
-        Some(JsonSchema1C::set_format),
+        JsonSchema1C::get_format,
+        JsonSchema1C::set_format,
     ),
-    Prop::new(
+    Prop::read_write(
         name!("UseCustomFormats"),
         name!("ИспользоватьДопФорматы"),
-        Some(JsonSchema1C::get_use_custom_formats),
-        Some(JsonSchema1C::set_use_custom_formats),
+        JsonSchema1C::get_use_custom_formats,
+        JsonSchema1C::set_use_custom_formats,
     ),
-    Prop::new(
-        name!("Version"),
-        name!("Версия"),
-        Some(JsonSchema1C::get_version),
-        None,
-    ),
-    Prop::new(
+    Prop::read_only(name!("Version"), name!("Версия"), JsonSchema1C::get_version),
+    Prop::read_write(
         name!("IgnoreUnknownFormats"),
         name!("ИгнорироватьНеизвестныеФорматы"),
-        Some(JsonSchema1C::get_ignore_unknown_formats),
-        Some(JsonSchema1C::set_ignore_unknown_formats),
+        JsonSchema1C::get_ignore_unknown_formats,
+        JsonSchema1C::set_ignore_unknown_formats,
     ),
-    Prop::new(
+    Prop::read_write(
         name!("CheckFormats"),
         name!("ПроверятьФорматы"),
-        Some(JsonSchema1C::get_check_formats),
-        Some(JsonSchema1C::set_check_formats),
+        JsonSchema1C::get_check_formats,
+        JsonSchema1C::set_check_formats,
     ),
 ];
 
@@ -101,18 +98,23 @@ pub struct JsonSchema1C {
     schema_store: HashMap<jsonschema::Uri<String>, Value>,
     ignore_unknown_formats: bool,
     check_formats: bool,
+    last_validation_errors: Option<String>,
 }
 
 // PROPS
 impl JsonSchema1C {
     fn get_schema(&mut self, val: &mut ParamMut) -> ComponentResult {
-        val.set_string(self.schema.as_ref().unwrap_or(&String::new()))?;
-        Ok(())
+        match self.schema.as_deref() {
+            Some(schema) => val.set_string(schema),
+            None => val.set_empty(),
+        }
     }
 
     fn get_format(&mut self, val: &mut ParamMut) -> ComponentResult {
-        val.set_string(self.output_format.as_ref().unwrap_or(&String::new()))?;
-        Ok(())
+        match self.output_format.as_deref() {
+            Some(f) => val.set_string(f),
+            None => val.set_empty(),
+        }
     }
 
     fn set_format(&mut self, val: &Param) -> ComponentResult {
@@ -121,7 +123,7 @@ impl JsonSchema1C {
     }
 
     fn get_use_custom_formats(&mut self, val: &mut ParamMut) -> ComponentResult {
-        Ok(val.set_bool(self.use_custom_formats))
+        val.set_bool(self.use_custom_formats)
     }
 
     fn set_use_custom_formats(&mut self, val: &Param) -> ComponentResult {
@@ -134,7 +136,7 @@ impl JsonSchema1C {
     }
 
     fn get_ignore_unknown_formats(&mut self, val: &mut ParamMut) -> ComponentResult {
-        Ok(val.set_bool(self.ignore_unknown_formats))
+        val.set_bool(self.ignore_unknown_formats)
     }
 
     fn set_ignore_unknown_formats(&mut self, val: &Param) -> ComponentResult {
@@ -143,7 +145,7 @@ impl JsonSchema1C {
     }
 
     fn get_check_formats(&mut self, val: &mut ParamMut) -> ComponentResult {
-        Ok(val.set_bool(self.check_formats))
+        val.set_bool(self.check_formats)
     }
 
     fn set_check_formats(&mut self, val: &Param) -> ComponentResult {
@@ -154,63 +156,47 @@ impl JsonSchema1C {
 
 // METHODS
 impl JsonSchema1C {
-    fn is_valid(&mut self, params: &mut Params, ret_val: &mut ParamMut) -> ComponentResult {
+    fn check_valid(&mut self, params: &mut Params, ret_val: &mut ParamMut) -> ComponentResult {
         let schema = self.get_schema_self()?;
-        let json = params.get_string(0)?;
-        let check_value: Value = serde_json::from_str(&json)?;
-        Ok(ret_val.set_bool(schema.is_valid(&check_value)))
+        let check_value = params.get_json_value(0)?;
+        ret_val.set_bool(schema.is_valid(&check_value))
     }
 
     fn validate(&mut self, params: &mut Params, ret_val: &mut ParamMut) -> ComponentResult {
         let schema = self.get_schema_self()?;
-        let json = params.get_string(0)?;
+        let check_value = params.get_json_value(0)?;
         let mut result = params.get_mut(1)?;
-        let check_value: Value = serde_json::from_str(&json)?;
-        let err_iter = schema.iter_errors(&check_value);
-        let validate_result: Vec<String> = match &self.output_format {
-            Some(f) => err_iter
-                .map(|e| {
-                    f.replace("{path}", &e.instance_path().to_string())
-                        .replace("{instance}", &e.instance().to_string())
-                        .replace("{schema_path}", &e.schema_path().to_string())
-                        .replace("{error}", &e.to_string())
-                })
-                .collect(),
-            None => err_iter.map(|e| e.to_string()).collect(),
-        };
 
-        let validate_result_string = serde_json::to_string(&validate_result)?;
-        result.set_string(validate_result_string)?;
-        Ok(ret_val.set_bool(validate_result.is_empty()))
+        let errors: Vec<String> = schema
+            .iter_errors(&check_value)
+            .map(|e| self.format_validate_error(&e))
+            .collect();
+
+        let errors_json = serde_json::to_string(&errors)?;
+        self.last_validation_errors = Some(errors_json.clone());
+
+        result.set_string(errors_json)?;
+        ret_val.set_bool(errors.is_empty())
     }
 
     fn add_scheme(&mut self, params: &mut Params) -> ComponentResult {
-        let json = params.get_string(0)?;
-        let schema_value: Value = serde_json::from_str(&json)?;
-        let schema_id = schema_value
+        let schema_value = params.get_json_value(0)?;
+
+        let schema_uri = schema_value
             .get("$id")
-            .ok_or(JsonSchema1CError::PropertyIdNotFound)?;
-        let schema_uri = schema_id
+            .ok_or(JsonSchema1CError::PropertyIdNotFound)?
             .as_str()
             .ok_or(JsonSchema1CError::PropertyIdNotString)?;
-        let uri = jsonschema::Uri::parse(schema_uri.to_string()).map_err(|_| {
-            JsonSchema1CError::ParamConvert {
-                index: 0,
-                expected: ParamType::Uri,
-            }
-        })?;
+
+        let uri = jsonschema::Uri::parse(schema_uri.to_string())
+            .map_err(|_| JsonSchema1CError::InvalidUri(schema_uri.to_string()))?;
+
         self.schema_store.insert(uri, schema_value);
         Ok(())
     }
 
     fn delete_scheme(&mut self, params: &mut Params) -> ComponentResult {
-        let input = params.get_string(0)?;
-        let uri = jsonschema::Uri::parse(input.to_string()).map_err(|_| {
-            JsonSchema1CError::ParamConvert {
-                index: 0,
-                expected: ParamType::Uri,
-            }
-        })?;
+        let uri = params.get_uri(0)?;
         self.schema_store.remove(&uri);
         Ok(())
     }
@@ -223,27 +209,42 @@ impl JsonSchema1C {
     fn get_last_error(&mut self, _params: &mut Params, ret_val: &mut ParamMut) -> ComponentResult {
         match self.last_error.as_ref() {
             Some(e) => ret_val.set_string(&e.to_string()),
-            None => Ok(ret_val.set_empty()),
+            None => ret_val.set_empty(),
         }
     }
 
     fn set_main_schema(&mut self, params: &mut Params) -> ComponentResult {
         let json = params.get_string(0)?;
         let schema_value: Value = serde_json::from_str(&json)?;
-        let mut schema_options = jsonschema::options()
+
+        let mut options = jsonschema::options()
             .should_ignore_unknown_formats(self.ignore_unknown_formats)
             .should_validate_formats(self.check_formats);
+
         if self.use_custom_formats {
-            for (name, function) in FORMATS {
-                schema_options = schema_options.with_format(name, function);
+            for (name, func) in FORMATS {
+                options = options.with_format(name, func);
             }
         }
-        let schema = schema_options
-            .with_retriever(RetrieveHandler::new(self.schema_store.clone()))
-            .build(&schema_value)?;
-        self.compiled_schema = Some(schema);
+
+        self.compiled_schema = Some(
+            options
+                .with_retriever(RetrieveHandler::new(self.schema_store.clone()))
+                .build(&schema_value)?,
+        );
         self.schema = Some(json);
         Ok(())
+    }
+
+    fn get_validation_errors(
+        &mut self,
+        _params: &mut Params,
+        ret_val: &mut ParamMut,
+    ) -> ComponentResult {
+        match self.last_validation_errors.as_deref() {
+            Some(e) => ret_val.set_string(e),
+            None => ret_val.set_empty(),
+        }
     }
 }
 
@@ -252,6 +253,17 @@ impl JsonSchema1C {
         self.compiled_schema
             .as_ref()
             .ok_or(JsonSchema1CError::SchemaNotInstalled)
+    }
+
+    fn format_validate_error(&self, error: &jsonschema::ValidationError) -> String {
+        match &self.output_format {
+            Some(fmt) => fmt
+                .replace("{path}", &error.instance_path().to_string())
+                .replace("{instance}", &error.instance().to_string())
+                .replace("{schema_path}", &error.schema_path().to_string())
+                .replace("{error}", &error.to_string()),
+            None => error.to_string(),
+        }
     }
 }
 
@@ -403,7 +415,9 @@ impl RawAddin for JsonSchema1C {
         let mut ret_val = ParamMut::new(val);
         match proc(self, &mut props, &mut ret_val) {
             Ok(_) => {
-                self.last_error = None;
+                if !method.save_error {
+                    self.last_error = None;
+                }
                 true
             }
             Err(e) => {
