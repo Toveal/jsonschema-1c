@@ -6,29 +6,46 @@ pub enum ParamType {
     String,
     Bool,
     Uri,
+    I32,
+    Blob,
+    Json,
+    StringOrBlob,
 }
 
 impl Display for ParamType {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ParamType::String => write!(f, "string"),
-            ParamType::Bool => write!(f, "bool"),
-            ParamType::Uri => write!(f, "uri"),
-        }
+        let name = match self {
+            Self::String => "string",
+            Self::Bool => "bool",
+            Self::I32 => "integer",
+            Self::Blob => "binary",
+            Self::Uri => "uri",
+            Self::Json => "json",
+            Self::StringOrBlob => "string or blob",
+        };
+        f.write_str(name)
     }
 }
 
 #[derive(Debug)]
 pub enum JsonSchema1CError {
-    SchemaCompile { msg: String },
-    SchemeNotInstalled,
+    // Schema errors
+    SchemaCompile(String),
+    SchemaNotInstalled,
+
+    // Schema property errors
     PropertyIdNotFound,
     PropertyIdNotString,
-    JsonReadError { msg: serde_json::Error },
-    OutOfMemory,
+
+    // Parameter errors
     ParamNotFound(usize),
-    ConvertParamType { num: usize, p_type: ParamType },
-    PropertyConvertType(ParamType),
+    ParamConvert { index: usize, expected: ParamType },
+    PropertyConvert(ParamType),
+
+    // Other errors
+    JsonParse(serde_json::Error),
+    InvalidUri(String),
+    OutOfMemory,
 }
 
 impl Error for JsonSchema1CError {}
@@ -36,37 +53,32 @@ impl Error for JsonSchema1CError {}
 impl Display for JsonSchema1CError {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            JsonSchema1CError::SchemaCompile { msg } => {
-                write!(f, "Scheme compilation error: {msg}")
+            Self::SchemaCompile(msg) => write!(f, "Schema compilation error: {msg}"),
+            Self::SchemaNotInstalled => f.write_str("Schema not installed"),
+            Self::PropertyIdNotFound => f.write_str("Property '$id' not found in schema"),
+            Self::PropertyIdNotString => f.write_str("Property '$id' is not a string"),
+            Self::ParamNotFound(index) => write!(f, "Parameter {index} not found"),
+            Self::ParamConvert { index, expected } => {
+                write!(f, "Cannot convert parameter {index} to {expected}")
             }
-            JsonSchema1CError::SchemeNotInstalled => write!(f, "Scheme not installed"),
-            JsonSchema1CError::PropertyIdNotFound => {
-                write!(f, "Property '$id' not found in the schema")
+            Self::PropertyConvert(expected) => {
+                write!(f, "Cannot convert property to {expected}")
             }
-            JsonSchema1CError::PropertyIdNotString => write!(f, "Property '$id' is not a string"),
-            JsonSchema1CError::JsonReadError { msg } => write!(f, "JSON reading error: {msg}"),
-            JsonSchema1CError::OutOfMemory => write!(f, "Out of memory"),
-            JsonSchema1CError::ConvertParamType { num, p_type } => {
-                write!(f, "Failed to extract parameter {num} as '{p_type}'")
-            }
-            JsonSchema1CError::ParamNotFound(num) => write!(f, "Param '{}' not found", num),
-            JsonSchema1CError::PropertyConvertType(t) => {
-                write!(f, "Failed to extract property as '{t}'")
-            }
+            Self::JsonParse(e) => write!(f, "JSON parse error: {e}"),
+            Self::OutOfMemory => f.write_str("Out of memory"),
+            Self::InvalidUri(uri) => write!(f, "Invalid URI: {uri}"),
         }
     }
 }
 
 impl From<serde_json::Error> for JsonSchema1CError {
     fn from(value: serde_json::Error) -> Self {
-        JsonSchema1CError::JsonReadError { msg: value }
+        Self::JsonParse(value)
     }
 }
 
 impl From<jsonschema::ValidationError<'_>> for JsonSchema1CError {
-    fn from(value: jsonschema::ValidationError) -> Self {
-        JsonSchema1CError::SchemaCompile {
-            msg: format!("{} {}", value.instance_path(), value),
-        }
+    fn from(err: jsonschema::ValidationError) -> Self {
+        Self::SchemaCompile(format!("{} {}", err.instance_path(), err))
     }
 }

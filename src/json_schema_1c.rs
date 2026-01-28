@@ -194,9 +194,9 @@ impl JsonSchema1C {
             .as_str()
             .ok_or(JsonSchema1CError::PropertyIdNotString)?;
         let uri = jsonschema::Uri::parse(schema_uri.to_string()).map_err(|_| {
-            JsonSchema1CError::ConvertParamType {
-                num: 0,
-                p_type: ParamType::Uri,
+            JsonSchema1CError::ParamConvert {
+                index: 0,
+                expected: ParamType::Uri,
             }
         })?;
         self.schema_store.insert(uri, schema_value);
@@ -206,9 +206,9 @@ impl JsonSchema1C {
     fn delete_scheme(&mut self, params: &mut Params) -> ComponentResult {
         let input = params.get_string(0)?;
         let uri = jsonschema::Uri::parse(input.to_string()).map_err(|_| {
-            JsonSchema1CError::ConvertParamType {
-                num: 0,
-                p_type: ParamType::Uri,
+            JsonSchema1CError::ParamConvert {
+                index: 0,
+                expected: ParamType::Uri,
             }
         })?;
         self.schema_store.remove(&uri);
@@ -251,7 +251,7 @@ impl JsonSchema1C {
     fn get_schema_self(&self) -> Result<&Validator, JsonSchema1CError> {
         self.compiled_schema
             .as_ref()
-            .ok_or(JsonSchema1CError::SchemeNotInstalled)
+            .ok_or(JsonSchema1CError::SchemaNotInstalled)
     }
 }
 
