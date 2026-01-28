@@ -354,17 +354,13 @@ impl RawAddin for JsonSchema1C {
     }
 
     fn get_n_params(&mut self, num: usize) -> usize {
-        METHODS.get(num).map(|m| m.params_count).unwrap_or(0)
+        METHODS.get(num).map_or(0, |m| m.params_count)
     }
 
     fn has_ret_val(&mut self, method_num: usize) -> bool {
         METHODS
             .get(method_num)
-            .map(|m| match m.method {
-                MethodVariant::Func(_) => true,
-                _ => false,
-            })
-            .unwrap_or(false)
+            .is_some_and(|m| matches!(m.method, MethodVariant::Func(_)))
     }
 
     fn call_as_proc(&mut self, method_num: usize, params: &mut [Variant]) -> bool {
