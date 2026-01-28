@@ -53,7 +53,7 @@ pub struct Method<T: RawAddin> {
     pub name: &'static CStr1C,
     pub name_ru: &'static CStr1C,
     pub params_count: usize,
-    pub method: MethodVariant<T>,
+    pub handler: MethodVariant<T>,
     pub save_error: bool,
 }
 
@@ -68,7 +68,7 @@ impl<T: RawAddin> Method<T> {
             name,
             name_ru,
             params_count,
-            method,
+            handler: method,
             save_error: false,
         }
     }
@@ -120,11 +120,6 @@ impl<'a> Param<'a> {
             .map_err(|_| Self::convert_err(ParamType::Bool))
     }
 
-    pub fn get_i32(&self) -> Result<i32, JsonSchema1CError> {
-        self.0
-            .get_i32()
-            .map_err(|_| Self::convert_err(ParamType::I32))
-    }
 }
 
 pub struct ParamMut<'a, 'b>(&'a mut Variant<'b>);
@@ -142,11 +137,6 @@ impl<'a, 'b> ParamMut<'a, 'b> {
 
     pub fn set_bool(&mut self, val: bool) -> ComponentResult {
         self.0.set_bool(val);
-        Ok(())
-    }
-
-    pub fn set_i32(&mut self, val: i32) -> ComponentResult {
-        self.0.set_i32(val);
         Ok(())
     }
 
@@ -184,24 +174,6 @@ impl<'a, 'b> Params<'a, 'b> {
         self.get_variant(index)?
             .get_string()
             .map_err(|_| Self::convert_err(index, ParamType::String))
-    }
-
-    pub fn get_bool(&self, index: usize) -> Result<bool, JsonSchema1CError> {
-        self.get_variant(index)?
-            .get_bool()
-            .map_err(|_| Self::convert_err(index, ParamType::Bool))
-    }
-
-    pub fn get_i32(&self, index: usize) -> Result<i32, JsonSchema1CError> {
-        self.get_variant(index)?
-            .get_i32()
-            .map_err(|_| Self::convert_err(index, ParamType::I32))
-    }
-
-    pub fn get_blob(&self, index: usize) -> Result<&[u8], JsonSchema1CError> {
-        self.get_variant(index)?
-            .get_blob()
-            .map_err(|_| Self::convert_err(index, ParamType::Blob))
     }
 
     pub fn get_json_value(&self, index: usize) -> Result<serde_json::Value, JsonSchema1CError> {

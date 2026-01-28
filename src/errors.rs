@@ -6,8 +6,6 @@ pub enum ParamType {
     String,
     Bool,
     Uri,
-    I32,
-    Blob,
     Json,
     StringOrBlob,
 }
@@ -17,8 +15,6 @@ impl Display for ParamType {
         let name = match self {
             Self::String => "string",
             Self::Bool => "bool",
-            Self::I32 => "integer",
-            Self::Blob => "binary",
             Self::Uri => "uri",
             Self::Json => "json",
             Self::StringOrBlob => "string or blob",

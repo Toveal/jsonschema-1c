@@ -208,7 +208,7 @@ impl JsonSchema1C {
 
     fn get_last_error(&mut self, _params: &mut Params, ret_val: &mut ParamMut) -> ComponentResult {
         match self.last_error.as_ref() {
-            Some(e) => ret_val.set_string(&e.to_string()),
+            Some(e) => ret_val.set_string(e.to_string()),
             None => ret_val.set_empty(),
         }
     }
@@ -312,7 +312,7 @@ impl RawAddin for JsonSchema1C {
 
         let mut prop = ParamMut::new(val);
         match getter(self, &mut prop) {
-            Ok(_) => true,
+            Ok(()) => true,
             Err(e) => {
                 self.last_error = Some(e);
                 false
@@ -333,7 +333,7 @@ impl RawAddin for JsonSchema1C {
 
         let prop = Param::new(val);
         match setter(self, &prop) {
-            Ok(_) => true,
+            Ok(()) => true,
             Err(e) => {
                 self.last_error = Some(e);
                 false
@@ -372,7 +372,7 @@ impl RawAddin for JsonSchema1C {
     fn has_ret_val(&mut self, method_num: usize) -> bool {
         METHODS
             .get(method_num)
-            .is_some_and(|m| matches!(m.method, MethodVariant::Func(_)))
+            .is_some_and(|m| matches!(m.handler, MethodVariant::Func(_)))
     }
 
     fn call_as_proc(&mut self, method_num: usize, params: &mut [Variant]) -> bool {
@@ -380,13 +380,13 @@ impl RawAddin for JsonSchema1C {
             return false;
         };
 
-        let MethodVariant::Proc(proc) = method.method else {
+        let MethodVariant::Proc(proc) = method.handler else {
             return false;
         };
 
         let mut props = Params::new(params);
         match proc(self, &mut props) {
-            Ok(_) => {
+            Ok(()) => {
                 self.last_error = None;
                 true
             }
@@ -407,14 +407,14 @@ impl RawAddin for JsonSchema1C {
             return false;
         };
 
-        let MethodVariant::Func(proc) = method.method else {
+        let MethodVariant::Func(proc) = method.handler else {
             return false;
         };
 
         let mut props = Params::new(params);
         let mut ret_val = ParamMut::new(val);
         match proc(self, &mut props, &mut ret_val) {
-            Ok(_) => {
+            Ok(()) => {
                 if !method.save_error {
                     self.last_error = None;
                 }
