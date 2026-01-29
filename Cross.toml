@@ -1,0 +1,12 @@
+[target.i686-unknown-linux-gnu]
+image = "rust:latest"
+pre-build = [
+    "apt-get update && apt-get install -y gcc-multilib g++-multilib",
+    "rustup target add i686-unknown-linux-gnu"
+]
+
+[target.x86_64-unknown-linux-gnu]
+image = "rust:latest"
+pre-build = [
+    "rustup target add x86_64-unknown-linux-gnu"
+]
