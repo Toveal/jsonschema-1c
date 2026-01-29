@@ -261,8 +261,7 @@ impl JsonSchema1C {
     }
 
     fn set_main_schema(&mut self, params: &mut Params) -> ComponentResult {
-        let json = params.get_string(0)?;
-        let schema_value: Value = serde_json::from_str(&json)?;
+        let schema_value = params.get_json_value(0)?;
 
         let mut options = jsonschema::options()
             .should_ignore_unknown_formats(self.ignore_unknown_formats)
@@ -283,7 +282,7 @@ impl JsonSchema1C {
                 .with_retriever(RetrieveHandler::new(self.schema_store.clone()))
                 .build(&schema_value)?,
         );
-        self.schema = Some(json);
+        self.schema = Some(schema_value.to_string());
         Ok(())
     }
 
