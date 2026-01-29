@@ -38,38 +38,6 @@ args = ["build", "-q", "--release", "--target", "x86_64-unknown-linux-gnu"]
 command = "cross"
 args = ["build", "-q", "--release", "--target", "i686-unknown-linux-gnu"]
 
-[tasks.build-debug-windows-32.linux]
-command = "cross"
-args = ["build", "-q", "--target", "i686-pc-windows-gnu"]
-
-[tasks.build-debug-windows-64.linux]
-command = "cross"
-args = ["build", "-q", "--target", "x86_64-pc-windows-gnu"]
-
-[tasks.build-debug-windows-32.windows]
-command = "cargo"
-args = ["build", "-q", "--target", "i686-pc-windows-msvc"]
-
-[tasks.build-debug-windows-64.windows]
-command = "cargo"
-args = ["build", "-q", "--target", "x86_64-pc-windows-msvc"]
-
-[tasks.build-debug-linux-64]
-command = "cross"
-args = ["build", "-q", "--target", "x86_64-unknown-linux-gnu"]
-
-[tasks.build-debug-linux-32]
-command = "cross"
-args = ["build", "-q", "--target", "i686-unknown-linux-gnu"]
-
-[tasks.debug]
-run_task = { name = [
-    "build-debug-windows-32",
-    "build-debug-windows-64",
-    "build-debug-linux-32",
-    "build-debug-linux-64",
-], parallel = true }
-
 [tasks.release]
 run_task = { name = [
     "build-release-windows-32",
@@ -83,32 +51,21 @@ script_runner = "@duckscript"
 script = '''
 mkdir ./out
 dirs = map
-map_put ${dirs} x86_64-pc-windows-msvc/$$type$$/jsonschema_1c.dll jsonschema_1c_x64.dll
-map_put ${dirs} i686-pc-windows-msvc/$$type$$/jsonschema_1c.dll jsonschema_1c_x32.dll
-map_put ${dirs} x86_64-pc-windows-gnu/$$type$$/jsonschema_1c.dll jsonschema_1c_x64.dll
-map_put ${dirs} i686-pc-windows-gnu/$$type$$/jsonschema_1c.dll jsonschema_1c_x32.dll
-map_put ${dirs} x86_64-unknown-linux-gnu/$$type$$/libjsonschema_1c.so jsonschema_1c_x64.so
-map_put ${dirs} i686-unknown-linux-gnu/$$type$$/libjsonschema_1c.so jsonschema_1c_x32.so
+map_put ${dirs} x86_64-pc-windows-msvc/release/jsonschema_1c.dll jsonschema_1c_x64.dll
+map_put ${dirs} i686-pc-windows-msvc/release/jsonschema_1c.dll jsonschema_1c_x32.dll
+map_put ${dirs} x86_64-pc-windows-gnu/release/jsonschema_1c.dll jsonschema_1c_x64.dll
+map_put ${dirs} i686-pc-windows-gnu/release/jsonschema_1c.dll jsonschema_1c_x32.dll
+map_put ${dirs} x86_64-unknown-linux-gnu/release/libjsonschema_1c.so jsonschema_1c_x64.so
+map_put ${dirs} i686-unknown-linux-gnu/release/libjsonschema_1c.so jsonschema_1c_x32.so
 keys = map_keys ${dirs}
 
 for dir_target in ${keys}
-    path_release = replace ${dir_target} $$type$$ release
-    path_debug = replace ${dir_target} $$type$$ debug
+    path_target = join_path ./target ${dir_target}
+    exist_path = is_path_exists ${path_target}
 
-    path_target_release = join_path ./target ${path_release}
-    path_target_debug = join_path ./target ${path_debug}
-
-    exist_path_release = is_path_exists ${path_target_release}
-    exist_path_debug = is_path_exists ${path_target_debug}
-
-    if ${exist_path_release}
+    if ${exist_path}
         p = map_get ${dirs} ${dir_target}
-        cp ${path_target_release} ./out/${p}
-    end
-
-    if ${exist_path_debug}
-        p = map_get ${dirs} ${dir_target}
-        cp ${path_target_debug} ./out/${p}
+        cp ${path_target} ./out/${p}
     end
 end
 
@@ -131,9 +88,6 @@ Get-ChildItem -Path "./out" -File | Where-Object { $_.Extension -ne ".zip" } | F
     Compress-Archive -Path $_.FullName -DestinationPath "./out/jsonschema_1c.zip" -Update
 }
 '''
-
-[tasks.pack]
-dependencies = ["clean", "debug", "remove-out", "copy_bin", "pack-to-zip"]
 
 [tasks.pack-release]
 dependencies = ["clean", "release", "remove-out", "copy_bin", "pack-to-zip"]
