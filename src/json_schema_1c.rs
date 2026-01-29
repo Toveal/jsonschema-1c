@@ -63,6 +63,18 @@ const METHODS: &[Method<JsonSchema1C>] = &[
         0,
         JsonSchema1C::clear_main_schema,
     ),
+    Method::func(
+        name!("ЕстьСхема"),
+        name!("HasScheme"),
+        1,
+        JsonSchema1C::has_scheme,
+    ),
+    Method::func(
+        name!("ПолучитьСхемы"),
+        name!("GetSchemes"),
+        0,
+        JsonSchema1C::get_schemes,
+    ),
 ];
 
 const PROPS: &[Prop<JsonSchema1C>] = &[
@@ -294,6 +306,16 @@ impl JsonSchema1C {
     fn clear_main_schema(&mut self, _params: &mut Params) -> ComponentResult {
         self.schema = None;
         Ok(())
+    }
+
+    fn has_scheme(&mut self, params: &mut Params, ret_val: &mut ParamMut) -> ComponentResult {
+        let url = params.get_uri(0)?;
+        ret_val.set_bool(self.schema_store.get(&url).is_some())
+    }
+
+    fn get_schemes(&mut self, _params: &mut Params, ret_val: &mut ParamMut) -> ComponentResult {
+        let result = serde_json::to_string(&self.schema_store)?;
+        ret_val.set_string(result)
     }
 }
 
