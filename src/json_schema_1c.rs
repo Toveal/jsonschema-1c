@@ -2,7 +2,7 @@ use crate::errors::JsonSchema1CError;
 use crate::formats::FORMATS;
 use crate::retrieve_handler::RetrieveHandler;
 use crate::tools::{ComponentResult, Method, MethodVariant, Param, ParamMut, Params, Prop};
-use addin1c::{name, CStr1C, Connection, RawAddin, Variant};
+use addin1c::{name, str1c, CStr1C, Connection, RawAddin, Variant};
 use jsonschema::Validator;
 use serde_json::Value;
 use std::collections::HashMap;
@@ -57,6 +57,12 @@ const METHODS: &[Method<JsonSchema1C>] = &[
         0,
         JsonSchema1C::get_validation_errors,
     ),
+    Method::proc(
+        name!("ClearMainScheme"),
+        name!("ОчиститьОсновнуюСхему"),
+        0,
+        JsonSchema1C::clear_main_schema,
+    ),
 ];
 
 const PROPS: &[Prop<JsonSchema1C>] = &[
@@ -86,6 +92,12 @@ const PROPS: &[Prop<JsonSchema1C>] = &[
         JsonSchema1C::get_check_formats,
         JsonSchema1C::set_check_formats,
     ),
+    Prop::read_write(
+        name!("Draft"),
+        name!("Стандарт"),
+        JsonSchema1C::get_draft,
+        JsonSchema1C::set_draft,
+    ),
 ];
 
 #[derive(Default)]
@@ -99,6 +111,7 @@ pub struct JsonSchema1C {
     ignore_unknown_formats: bool,
     check_formats: bool,
     last_validation_errors: Option<String>,
+    draft: Option<jsonschema::Draft>,
 }
 
 // PROPS
@@ -132,7 +145,8 @@ impl JsonSchema1C {
     }
 
     fn get_version(&mut self, val: &mut ParamMut) -> ComponentResult {
-        val.set_string(env!("CARGO_PKG_VERSION"))
+        val.set_str1c(str1c!(env!("CARGO_PKG_VERSION")))?;
+        Ok(())
     }
 
     fn get_ignore_unknown_formats(&mut self, val: &mut ParamMut) -> ComponentResult {
@@ -150,6 +164,39 @@ impl JsonSchema1C {
 
     fn set_check_formats(&mut self, val: &Param) -> ComponentResult {
         self.check_formats = val.get_bool()?;
+        Ok(())
+    }
+
+    fn get_draft(&mut self, val: &mut ParamMut) -> ComponentResult {
+        match self.draft.as_ref() {
+            Some(d) => val.set_str1c(match d {
+                jsonschema::Draft::Draft4 => str1c!("Draft4"),
+                jsonschema::Draft::Draft6 => str1c!("Draft6"),
+                jsonschema::Draft::Draft7 => str1c!("Draft7"),
+                jsonschema::Draft::Draft201909 => str1c!("Draft201909"),
+                jsonschema::Draft::Draft202012 => str1c!("Draft202012"),
+                _ => str1c!("Unknown Draft"),
+            }),
+            None => val.set_empty(),
+        }
+    }
+
+    fn set_draft(&mut self, val: &Param) -> ComponentResult {
+        let draft_str = val.get_str1c()?;
+        let draft = if draft_str == str1c!("4") {
+            jsonschema::Draft::Draft4
+        } else if draft_str == str1c!("6") {
+            jsonschema::Draft::Draft6
+        } else if draft_str == str1c!("7") {
+            jsonschema::Draft::Draft7
+        } else if draft_str == str1c!("2019-09") {
+            jsonschema::Draft::Draft201909
+        } else if draft_str == str1c!("2020-12") {
+            jsonschema::Draft::Draft202012
+        } else {
+            return Err(JsonSchema1CError::UnknownDraft);
+        };
+        self.draft = Some(draft);
         Ok(())
     }
 }
@@ -227,6 +274,10 @@ impl JsonSchema1C {
             }
         }
 
+        if let Some(d) = self.draft {
+            options = options.with_draft(d);
+        }
+
         self.compiled_schema = Some(
             options
                 .with_retriever(RetrieveHandler::new(self.schema_store.clone()))
@@ -245,6 +296,11 @@ impl JsonSchema1C {
             Some(e) => ret_val.set_string(e),
             None => ret_val.set_empty(),
         }
+    }
+
+    fn clear_main_schema(&mut self, _params: &mut Params) -> ComponentResult {
+        self.schema = None;
+        Ok(())
     }
 }
 

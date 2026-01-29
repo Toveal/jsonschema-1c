@@ -42,6 +42,7 @@ pub enum JsonSchema1CError {
     JsonParse(serde_json::Error),
     InvalidUri(String),
     OutOfMemory,
+    UnknownDraft,
 }
 
 impl Error for JsonSchema1CError {}
@@ -63,6 +64,7 @@ impl Display for JsonSchema1CError {
             Self::JsonParse(e) => write!(f, "JSON parse error: {e}"),
             Self::OutOfMemory => f.write_str("Out of memory"),
             Self::InvalidUri(uri) => write!(f, "Invalid URI: {uri}"),
+            Self::UnknownDraft => f.write_str("Unknown draft"),
         }
     }
 }
