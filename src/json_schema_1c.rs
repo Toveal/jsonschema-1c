@@ -189,15 +189,15 @@ impl JsonSchema1C {
 
     fn set_draft(&mut self, val: &Param) -> ComponentResult {
         let draft_str = val.get_str1c()?;
-        let draft = if draft_str == str1c!("4") {
+        let draft = if draft_str == *str1c!("4") {
             jsonschema::Draft::Draft4
-        } else if draft_str == str1c!("6") {
+        } else if draft_str == *str1c!("6") {
             jsonschema::Draft::Draft6
-        } else if draft_str == str1c!("7") {
+        } else if draft_str == *str1c!("7") {
             jsonschema::Draft::Draft7
-        } else if draft_str == str1c!("2019-09") {
+        } else if draft_str == *str1c!("2019-09") {
             jsonschema::Draft::Draft201909
-        } else if draft_str == str1c!("2020-12") {
+        } else if draft_str == *str1c!("2020-12") {
             jsonschema::Draft::Draft202012
         } else {
             return Err(JsonSchema1CError::UnknownDraft);
