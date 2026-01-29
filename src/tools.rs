@@ -120,6 +120,11 @@ impl<'a> Param<'a> {
             .map_err(|_| Self::convert_err(ParamType::Bool))
     }
 
+    pub fn get_str1c(&self) -> Result<&[u16], JsonSchema1CError> {
+        self.0
+            .get_str1c()
+            .map_err(|_| Self::convert_err(ParamType::String))
+    }
 }
 
 pub struct ParamMut<'a, 'b>(&'a mut Variant<'b>);
@@ -142,6 +147,13 @@ impl<'a, 'b> ParamMut<'a, 'b> {
 
     pub fn set_empty(&mut self) -> ComponentResult {
         self.0.set_empty();
+        Ok(())
+    }
+
+    pub fn set_str1c(&mut self, val: &[u16]) -> ComponentResult {
+        self.0
+            .set_str1c(val)
+            .map_err(|_| JsonSchema1CError::OutOfMemory)?;
         Ok(())
     }
 }
