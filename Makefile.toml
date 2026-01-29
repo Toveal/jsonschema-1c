@@ -1,59 +1,66 @@
 [tasks.clean]
 command = "cargo"
-args = ["clean"]
+args = ["clean", "-q"]
 
 [tasks.remove-out.windows]
 script_runner = "@duckscript"
 script = '''
-rm -r ./out '''
+rm -r ./out
+'''
+
+[tasks.remove-out.linux]
+script_runner = "bash"
+script = '''
+rm -rf ./out
+'''
 
 [tasks.build-release-windows-32.linux]
 command = "cross"
-args = ["build", "--release", "--target", "i686-pc-windows-gnu"]
+args = ["build", "-q", "--release", "--target", "i686-pc-windows-gnu"]
 
 [tasks.build-release-windows-64.linux]
 command = "cross"
-args = ["build", "--release", "--target", "x86_64-pc-windows-gnu"]
-
-[tasks.build-debug-windows-32.linux]
-command = "cross"
-args = ["build", "--target", "i686-pc-windows-gnu"]
-
-[tasks.build-debug-windows-64.linux]
-command = "cross"
-args = ["build", "--target", "x86_64-pc-windows-gnu"]
+args = ["build", "-q", "--release", "--target", "x86_64-pc-windows-gnu"]
 
 [tasks.build-release-windows-32.windows]
-command = "cross"
-args = ["build", "--release", "--target", "i686-pc-windows-msvc"]
+command = "cargo"
+args = ["build", "-q", "--release", "--target", "i686-pc-windows-msvc"]
 
 [tasks.build-release-windows-64.windows]
-command = "cross"
-args = ["build", "--release", "--target", "x86_64-pc-windows-msvc"]
-
-[tasks.build-debug-windows-32.windows]
-command = "cross"
-args = ["build", "--target", "i686-pc-windows-msvc"]
-
-[tasks.build-debug-windows-64.windows]
-command = "cross"
-args = ["build", "--target", "x86_64-pc-windows-msvc"]
-
-[tasks.build-debug-linux-64]
-command = "cross"
-args = ["build", "--target", "x86_64-unknown-linux-gnu"]
+command = "cargo"
+args = ["build", "-q", "--release", "--target", "x86_64-pc-windows-msvc"]
 
 [tasks.build-release-linux-64]
 command = "cross"
-args = ["build", "--release", "--target", "x86_64-unknown-linux-gnu"]
-
-[tasks.build-debug-linux-32]
-command = "cross"
-args = ["build", "--target", "i686-unknown-linux-gnu"]
+args = ["build", "-q", "--release", "--target", "x86_64-unknown-linux-gnu"]
 
 [tasks.build-release-linux-32]
 command = "cross"
-args = ["build", "--release", "--target", "i686-unknown-linux-gnu"]
+args = ["build", "-q", "--release", "--target", "i686-unknown-linux-gnu"]
+
+[tasks.build-debug-windows-32.linux]
+command = "cross"
+args = ["build", "-q", "--target", "i686-pc-windows-gnu"]
+
+[tasks.build-debug-windows-64.linux]
+command = "cross"
+args = ["build", "-q", "--target", "x86_64-pc-windows-gnu"]
+
+[tasks.build-debug-windows-32.windows]
+command = "cargo"
+args = ["build", "-q", "--target", "i686-pc-windows-msvc"]
+
+[tasks.build-debug-windows-64.windows]
+command = "cargo"
+args = ["build", "-q", "--target", "x86_64-pc-windows-msvc"]
+
+[tasks.build-debug-linux-64]
+command = "cross"
+args = ["build", "-q", "--target", "x86_64-unknown-linux-gnu"]
+
+[tasks.build-debug-linux-32]
+command = "cross"
+args = ["build", "-q", "--target", "i686-unknown-linux-gnu"]
 
 [tasks.debug]
 run_task = { name = [
@@ -96,7 +103,6 @@ for dir_target in ${keys}
 
     if ${exist_path_release}
         p = map_get ${dirs} ${dir_target}
-        print yes
         cp ${path_target_release} ./out/${p}
     end
 
@@ -113,15 +119,15 @@ cp Manifest.xml ./out/Manifest.xml
 [tasks.pack-to-zip.linux]
 script_runner = "bash"
 script = '''
-cd ./out 
-zip "jsonschema_1c" *
+cd ./out
+zip jsonschema_1c *
 '''
 
 [tasks.pack-to-zip.windows]
 script_runner = "powershell"
 script_extension = "ps1"
 script = '''
-Get-ChildItem -Path "./out" -File | ForEach-Object {
+Get-ChildItem -Path "./out" -File | Where-Object { $_.Extension -ne ".zip" } | ForEach-Object {
     Compress-Archive -Path $_.FullName -DestinationPath "./out/jsonschema_1c.zip" -Update
 }
 '''
@@ -131,7 +137,3 @@ dependencies = ["clean", "debug", "remove-out", "copy_bin", "pack-to-zip"]
 
 [tasks.pack-release]
 dependencies = ["clean", "release", "remove-out", "copy_bin", "pack-to-zip"]
-
-[tasks.test]
-args = ["insta", "test"]
-command = "cargo"
