@@ -117,17 +117,11 @@ pub struct JsonSchema1C {
 // PROPS
 impl JsonSchema1C {
     fn get_schema(&mut self, val: &mut ParamMut) -> ComponentResult {
-        match self.schema.as_deref() {
-            Some(schema) => val.set_string(schema),
-            None => val.set_empty(),
-        }
+        val.set_string(self.schema.as_deref().unwrap_or_default())
     }
 
     fn get_format(&mut self, val: &mut ParamMut) -> ComponentResult {
-        match self.output_format.as_deref() {
-            Some(f) => val.set_string(f),
-            None => val.set_empty(),
-        }
+        val.set_string(self.output_format.as_deref().unwrap_or_default())
     }
 
     fn set_format(&mut self, val: &Param) -> ComponentResult {
@@ -177,7 +171,7 @@ impl JsonSchema1C {
                 jsonschema::Draft::Draft202012 => str1c!("Draft202012"),
                 _ => str1c!("Unknown Draft"),
             }),
-            None => val.set_empty(),
+            None => val.set_str1c(str1c!("")),
         }
     }
 

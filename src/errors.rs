@@ -17,7 +17,7 @@ impl Display for ParamType {
             Self::Bool => "bool",
             Self::Uri => "uri",
             Self::Json => "json",
-            Self::StringOrBlob => "string or blob",
+            Self::StringOrBlob => "string or binary",
         };
         f.write_str(name)
     }
