@@ -1,6 +1,8 @@
 # JSON Schema для 1С
 
-Надстройка над крейтом [jsonschema](https://crates.io/crates/jsonschema) для валидации JSON в 1С:Предприятие.
+Внешняя компонента Native API для валидации JSON по JSON Schema в 1С:Предприятие.
+
+[![Infostart](https://infostart.ru/bitrix/templates/sandbox_empty/assets/tpl/abo/img/logo.svg)](https://infostart.ru/1c/tools/2626983/)
 
 [![Draft 2020-12](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft2020-12.json)](https://bowtie.report/#/implementations/rust-jsonschema)
 [![Draft 2019-09](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft2019-09.json)](https://bowtie.report/#/implementations/rust-jsonschema)
