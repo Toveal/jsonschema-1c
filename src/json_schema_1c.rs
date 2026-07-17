@@ -64,8 +64,8 @@ const METHODS: &[Method<JsonSchema1C>] = &[
         JsonSchema1C::clear_main_schema,
     ),
     Method::func(
-        name!("ЕстьСхема"),
         name!("HasScheme"),
+        name!("ЕстьСхема"),
         1,
         JsonSchema1C::has_scheme,
     ),
