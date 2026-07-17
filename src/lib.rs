@@ -9,9 +9,6 @@ mod tools;
 use addin1c::{create_component, destroy_component, name, AttachType};
 use std::ffi::{c_int, c_void};
 use std::os::raw::c_long;
-use std::sync::atomic::{AtomicI32, Ordering};
-
-static PLATFORM_CAPABILITIES: AtomicI32 = AtomicI32::new(-1);
 
 #[no_mangle]
 unsafe extern "C" fn GetClassObject(name: *const u16, component: *mut *mut c_void) -> c_long {
@@ -32,8 +29,7 @@ unsafe extern "C" fn GetClassNames() -> *const u16 {
 }
 
 #[no_mangle]
-unsafe extern "C" fn SetPlatformCapabilities(capabilities: c_int) -> c_int {
-    PLATFORM_CAPABILITIES.store(capabilities, Ordering::Relaxed);
+unsafe extern "C" fn SetPlatformCapabilities(_capabilities: c_int) -> c_int {
     3
 }
 
